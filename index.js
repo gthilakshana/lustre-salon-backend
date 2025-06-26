@@ -4,6 +4,7 @@ const app = express()
 
 // Middleware
 app.use(express.json())
+// Middleware
 
 app.get('/',
     (req, res)=>{
