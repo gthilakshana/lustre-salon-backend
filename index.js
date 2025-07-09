@@ -12,7 +12,7 @@ app.use(express.json())
 const connectionString =  "mongodb+srv://admin:123@cluster0.ya0uqag.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 mongoose.connect(connectionString).then(
     () => {
-    console.log("Connected to MongoDB")
+    console.log("Connected to connected")
   }
 ).catch(
     ()=>{
@@ -20,30 +20,9 @@ mongoose.connect(connectionString).then(
     }
 )
 
-app.get('/',
-    (req, res)=>{
-        console.log(req.body)
-        console.log("Hello World")
- 
-        res.json({
-            message: "Hello "+ prefix + " " + req.body.name
-        })
-    }
-)
-
-app.post('/',
-    (req , res)=>{
-        console.log("Hello World")
-    }
-)
-
-app.delete('/',
-    (req , res)=>{
-        console.log("Delete request")
-    }
-)
+app.use("/students", studentRouter)
 
 app.listen(5000, () => {
-    console.log("Server is running on port 5000")
-    console.log("Server is running on port 5000")
+    console.log("Server is started")
+    
 })
