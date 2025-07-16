@@ -13,7 +13,7 @@ app.use(express.json())
 const connectionString =  "mongodb+srv://admin:123@cluster0.ya0uqag.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 mongoose.connect(connectionString).then(
     () => {
-    console.log("Connected to connected")
+    console.log("Database is connected")
   }
 ).catch(
     ()=>{
