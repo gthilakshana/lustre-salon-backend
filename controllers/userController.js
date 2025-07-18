@@ -42,7 +42,7 @@ export function loginUser(req, res) {
             if (isPasswordMatching){
                 res.json({
                     message: "User logged in successfully",
-                    user: user
+                    
                 })
             }else {
                 res.json({
