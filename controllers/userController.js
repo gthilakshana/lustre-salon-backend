@@ -40,10 +40,24 @@ export function loginUser(req, res) {
         }else {
             const isPasswordMatching = bcrypt.compareSync(req.body.password, user.password);
             if (isPasswordMatching){
+                
+                const token = jwt.sign({
+                    email: user.email,
+                    firstName: user.firstName,
+                    lastName: user.lastName,
+                    role: user.role,
+                    isEmailVerified: user.isEmailVerified,
+                }, 
+                "jwt-secret"
+            )
+       
                 res.json({
-                    message: "User logged in successfully",
+                    message: "Login successfully",
+                    token: token
                     
                 })
+
+                
             }else {
                 res.json({
                     message: "Invalid Password"
