@@ -7,6 +7,16 @@ const app = express()
 
 // Middleware
 app.use(express.json())
+
+app.use(
+    (req, res, next)=>{
+       let token  = req.header("Authorization")
+       if(token != null){
+        token = token.replace("Bearer ", "")
+        console.log(token)
+       }
+    }
+)
 // Middleware
 
 
