@@ -18,9 +18,19 @@ app.use(
         console.log(token)
         Jwt.verify(token, "jwt-secret", 
             (err, decoded) => {
-            console.log(decoded)
+            if(decoded == null){
+                res.json({
+                    message: "Invalid token please login again"
+                })
+                return
+            }else{
+              
+                req.user = decoded
+                
+            }
         })
        }
+       next()
     }
 )
 // Middleware

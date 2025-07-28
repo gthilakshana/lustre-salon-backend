@@ -34,7 +34,7 @@ export function loginUser(req, res) {
         email: req.body.email
     }).then((user) => {
         if (user == null) {
-            res.json({
+            res.status(404).json({
                 message: "User not found"
             })
         }else {
@@ -59,7 +59,7 @@ export function loginUser(req, res) {
 
                 
             }else {
-                res.json({
+                res.status(401).json({
                     message: "Invalid Password"
                 })
             }
