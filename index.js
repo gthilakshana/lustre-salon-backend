@@ -3,41 +3,37 @@ import mongoose from "mongoose";
 import studentRouter from "./routes/studentsRouter.js";
 import userRouter from "./routes/userRouter.js";
 import productRouter from "./routes/productRouter.js";
-import Jwt from "jsonwebtoken"
+import jwt from "jsonwebtoken"
+import cors from "cors"
+import dotenv from "dotenv"
+dotenv.config()
+
 
 const app = express()
-
+app.use (cors())
 // Middleware
 app.use(express.json())
 
-app.use(
-    (req, res, next)=>{
-       let token  = req.header("Authorization")
+//--- Jwt Token ---//
+app.use((req, res, next) => {
+  const token = req.header("Authorization")?.replace("Bearer ", "");
+  console.log(token);
 
-       if(token != null){
-        token = token.replace("Bearer ", "")
-        console.log(token)
-        Jwt.verify(token, "jwt-secret", 
-            (err, decoded) => {
-            if(decoded == null){
-                res.json({
-                    message: "Invalid token please login again"
-                })
-                return
-            }else{
-              
-                req.user = decoded
-                
-            }
-        })
-       }
-       next()
-    }
-)
+  if (token !== null) {
+    jwt.verify(token, process.env.JWT_SECRET, (error, decoded) => {
+      if (!error) {
+        req.user = decoded;
+      }
+    });
+  }
+
+  next();
+});
+//--- Jwt Token ---//
 // Middleware
 
 
-const connectionString =  "mongodb+srv://admin:123@cluster0.ya0uqag.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+const connectionString =  process.env.MONGO_URI
 mongoose.connect(connectionString).then(
     () => {
     console.log("Database is connected")
@@ -48,9 +44,9 @@ mongoose.connect(connectionString).then(
     }
 )
 
-app.use("/students", studentRouter)
-app.use("/users", userRouter)   
-app.use("/products", productRouter)
+app.use("/api/students", studentRouter)
+app.use("/api/users", userRouter)   
+app.use("/api/products", productRouter)
 
 app.listen(5000, 
     () => {
