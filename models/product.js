@@ -14,6 +14,11 @@ const productSchema = new mongoose.Schema(
          required: true
         },
 
+        stock:{
+            type: Number,
+            required: true
+        },
+
         altName: {
            type: [String],
            required: true,
