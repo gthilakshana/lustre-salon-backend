@@ -1,47 +1,68 @@
 import express from "express";
 import mongoose from "mongoose";
-import studentRouter from "./routes/studentsRouter.js";
-import userRouter from "./routes/userRouter.js";
-import productRouter from "./routes/productRouter.js";
-import jwt from "jsonwebtoken";
-import cors from "cors";
 import dotenv from "dotenv";
+import cors from "cors";
+import jwt from "jsonwebtoken";
+import cron from "node-cron";
+// import stripeRouter from "./routes/stripeRouter.js";
+import userRouter from "./routes/userRouter.js";
+import messageRouter from "./routes/messageRouter.js";
+import appointmentRouter from "./routes/appointmentRouter.js";
+
+import Message from "./models/message.js";
+
 dotenv.config();
 
 const app = express();
+
+// --- Middleware ---
 app.use(cors());
 app.use(express.json());
 
-// --- Jwt Token Middleware --- //
+// JWT middleware to attach user info from token
 app.use((req, res, next) => {
   const token = req.header("Authorization")?.replace("Bearer ", "");
-
   if (token) {
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      req.user = decoded; 
+      req.user = decoded;
     } catch (err) {
       console.warn("Invalid token:", err.message);
-     
     }
   }
-
   next();
 });
-// --- Jwt Token Middleware --- //
 
-
+// --- Connect to MongoDB ---
 mongoose
   .connect(process.env.MONGO_URI)
-  .then(() => console.log("Database is connected"))
-  .catch(() => console.log("Database connection failed"));
+  .then(() => console.log("Database connected successfully"))
+  .catch((err) => {
+    console.error("Database connection failed:", err);
+    process.exit(1); 
+  });
 
+// --- Auto-delete messages older than 5 days ---
+cron.schedule("0 0 * * *", async () => {
+  try {
+    const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
+    const result = await Message.deleteMany({ createdAt: { $lt: fiveDaysAgo } });
+    console.log(`Auto-deleted ${result.deletedCount} messages older than 5 days`);
+  } catch (err) {
+    console.error("Error auto-deleting old messages:", err);
+  }
+});
 
-app.use("/api/students", studentRouter);
+// --- Routes ---
+app.get("/", (req, res) => res.send("API is running"));
+
 app.use("/api/users", userRouter);
-app.use("/api/products", productRouter);
+app.use("/api/messages", messageRouter);
+app.use("/api/appointments", appointmentRouter);
+// app.use("/api/stripe", stripeRouter);
 
-
-app.listen(5000, () => {
-  console.log("Server is started on port 5000");
+// --- Start server ---
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`Server started on port ${PORT}`);
 });
