@@ -6,6 +6,7 @@ import jwt from "jsonwebtoken";
 import cron from "node-cron";
 // import stripeRouter from "./routes/stripeRouter.js";
 import userRouter from "./routes/userRouter.js";
+import serviceRouter from "./routes/serviceRouter.js";  
 import messageRouter from "./routes/messageRouter.js";
 import appointmentRouter from "./routes/appointmentRouter.js";
 
@@ -59,6 +60,7 @@ app.get("/", (req, res) => res.send("API is running"));
 app.use("/api/users", userRouter);
 app.use("/api/messages", messageRouter);
 app.use("/api/appointments", appointmentRouter);
+app.use("/api/services", serviceRouter);
 // app.use("/api/stripe", stripeRouter);
 
 // --- Start server ---
