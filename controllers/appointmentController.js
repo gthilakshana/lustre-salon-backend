@@ -2,11 +2,20 @@ import Appointment from "../models/appointment.js";
 import Stripe from "stripe";
 import dotenv from "dotenv";
 import { combineDateAndTime, addMinutesToTimeStr } from "../utils/timeUtils.js";
+
 dotenv.config();
+
+// Ensure Stripe key exists
+if (!process.env.STRIPE_SECRET_KEY) {
+  console.error("STRIPE_SECRET_KEY is missing in environment variables!");
+  process.exit(1);
+}
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2023-08-16" });
 
-
+// ──────────────────────────────────────────────────────────────────────────────
+// Helper Functions
+// ──────────────────────────────────────────────────────────────────────────────
 export async function ensureEndTimeAndSave(appt) {
   if (!appt.endTime || appt.endTime.trim() === "") {
     const computed = addMinutesToTimeStr(appt.time || "9:00 AM", 60);
@@ -15,7 +24,6 @@ export async function ensureEndTimeAndSave(appt) {
   }
 }
 
-// Update appointment statuses based on date + endTime
 export async function updateStatusesIfNeeded(appointments) {
   const now = new Date();
   const updates = [];
@@ -30,12 +38,16 @@ export async function updateStatusesIfNeeded(appointments) {
   if (updates.length) await Promise.all(updates);
 }
 
-// Create appointment 
+// ──────────────────────────────────────────────────────────────────────────────
+// CRUD Controllers
+// ──────────────────────────────────────────────────────────────────────────────
 export async function createAppointment(req, res) {
   try {
-    const { stylistName, serviceName, subName, date, time, endTime, type, fullPayment, duePayment, paymentType } = req.body;
+    const { stylistName, serviceName, subName, date, time, endTime, type,
+            fullPayment, duePayment, paymentType } = req.body;
+
     if (!req.user || !req.user._id)
-      return res.status(401).json({ message: "Unauthorized: User not logged in" });
+      return res.status(401).json({ message: "Unauthorized" });
 
     const appointment = await Appointment.create({
       stylistName,
@@ -53,7 +65,6 @@ export async function createAppointment(req, res) {
     });
 
     await ensureEndTimeAndSave(appointment);
-
     res.status(201).json({ message: "Appointment created successfully", appointment });
   } catch (err) {
     console.error("Error creating appointment:", err);
@@ -61,7 +72,6 @@ export async function createAppointment(req, res) {
   }
 }
 
-// Get all appointments (for admin)
 export async function getAppointments(req, res) {
   try {
     const appointments = await Appointment.find().populate("user", "fullName email");
@@ -72,7 +82,6 @@ export async function getAppointments(req, res) {
   }
 }
 
-// Get my appointments (user)
 export async function getMyAppointments(req, res) {
   try {
     let appointments = await Appointment.find({ user: req.user._id });
@@ -85,7 +94,6 @@ export async function getMyAppointments(req, res) {
   }
 }
 
-// Delete appointment
 export async function deleteAppointment(req, res) {
   try {
     const { id } = req.params;
@@ -98,7 +106,9 @@ export async function deleteAppointment(req, res) {
   }
 }
 
-// Book only (no payment)
+// ──────────────────────────────────────────────────────────────────────────────
+// Booking & Payment Controllers
+// ──────────────────────────────────────────────────────────────────────────────
 export async function saveAppointmentsBookOnly(req, res) {
   try {
     const { appointments } = req.body;
@@ -106,7 +116,6 @@ export async function saveAppointmentsBookOnly(req, res) {
     if (!appointments?.length) return res.status(400).json({ message: "No appointments provided" });
 
     const savedAppointments = [];
-
     for (const item of appointments) {
       const appt = await Appointment.create({
         stylistName: item.stylistName,
@@ -125,7 +134,6 @@ export async function saveAppointmentsBookOnly(req, res) {
       await ensureEndTimeAndSave(appt);
       savedAppointments.push(appt);
     }
-
     res.status(201).json({ message: "Appointments booked successfully", savedAppointments });
   } catch (err) {
     console.error("Error booking appointments:", err);
@@ -133,14 +141,12 @@ export async function saveAppointmentsBookOnly(req, res) {
   }
 }
 
-// Save after payment 
 export async function saveAppointmentsAfterPayment(req, res) {
   try {
     const { cartItems, paymentOption } = req.body;
     if (!req.user || !req.user._id) return res.status(401).json({ message: "Unauthorized" });
 
     const savedAppointments = [];
-
     for (const item of cartItems) {
       const exists = await Appointment.findOne({
         user: req.user._id,
@@ -148,7 +154,7 @@ export async function saveAppointmentsAfterPayment(req, res) {
         date: item.date,
         time: item.time
       });
-      if (exists) continue; 
+      if (exists) continue;
 
       let fullPayment = Number(item.fullPayment || 0);
       let duePayment = 0;
@@ -175,7 +181,6 @@ export async function saveAppointmentsAfterPayment(req, res) {
       await ensureEndTimeAndSave(appt);
       savedAppointments.push(appt);
     }
-
     res.status(201).json({ message: "Appointments saved successfully", savedAppointments });
   } catch (err) {
     console.error("Error saving appointments after payment:", err);
@@ -183,8 +188,6 @@ export async function saveAppointmentsAfterPayment(req, res) {
   }
 }
 
-
-// Update status manually
 export async function updateAppointmentStatus(req, res) {
   try {
     const { id } = req.params;
@@ -202,23 +205,28 @@ export async function updateAppointmentStatus(req, res) {
   }
 }
 
-// Confirm Stripe payment
+// ──────────────────────────────────────────────────────────────────────────────
+// Stripe Payment
+// ──────────────────────────────────────────────────────────────────────────────
 export async function confirmPayment(req, res) {
   const { sessionId } = req.body;
   if (!sessionId) return res.status(400).json({ message: "No session ID provided" });
 
   try {
     const session = await stripe.checkout.sessions.retrieve(sessionId);
-
     if (!session) return res.status(400).json({ message: "Invalid session ID" });
 
-   
-    const cartItems = session.metadata?.cartItems ? JSON.parse(session.metadata.cartItems) : [];
-    
+    let cartItems = [];
+    try {
+      if (session.metadata?.cartItems) {
+        cartItems = JSON.parse(session.metadata.cartItems);
+      }
+    } catch (e) {
+      console.error("Metadata parse error:", e);
+    }
 
     if (session.payment_status === "paid") {
       const createdAppointments = [];
-
       for (const item of cartItems) {
         const exists = await Appointment.findOne({
           user: item.userId,
@@ -242,16 +250,13 @@ export async function confirmPayment(req, res) {
           user: item.userId,
           status: "Completed"
         });
-
         createdAppointments.push(appt);
       }
-
       return res.status(200).json({
         message: "Payment confirmed! Appointments created.",
         createdCount: createdAppointments.length
       });
     }
-
     res.status(400).json({ message: "Payment not completed" });
   } catch (err) {
     console.error("confirmPayment error:", err);
@@ -259,35 +264,33 @@ export async function confirmPayment(req, res) {
   }
 }
 
-// Create Stripe checkout session
 export const createCheckoutSession = async (req, res) => {
   const { cartItems, paymentOption } = req.body;
-
   if (!cartItems?.length) return res.status(400).json({ message: "No items in cart" });
 
   try {
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
       mode: "payment",
+      // Stripe does NOT support LKR directly. Use a supported currency.
       line_items: cartItems.map(item => ({
         price_data: {
-          currency: "lkr",
+          currency: "usd", // <-- Change to a supported currency
           product_data: { name: item.serviceName },
           unit_amount: Math.round(item.fullPayment * 100)
         },
         quantity: 1
       })),
       metadata: {
-        cartItems: JSON.stringify(cartItems), 
+        cartItems: JSON.stringify(cartItems),
         paymentOption
       },
       success_url: `${process.env.FRONTEND_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.FRONTEND_URL}/cart`
     });
-
     res.status(200).json({ id: session.id });
   } catch (err) {
     console.error("Stripe session creation error:", err);
     res.status(500).json({ message: "Failed to create Stripe session" });
   }
-}
+};
