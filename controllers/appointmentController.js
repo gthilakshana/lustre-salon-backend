@@ -31,12 +31,12 @@ export async function updateStatusesIfNeeded(appointments) {
   if (updates.length) await Promise.all(updates);
 }
 
-
-// Create appointment (manual booking)
+// Create appointment 
 export async function createAppointment(req, res) {
   try {
     const { stylistName, serviceName, subName, date, time, endTime, type, fullPayment, duePayment, paymentType } = req.body;
-    if (!req.user?._id) return res.status(401).json({ message: "Unauthorized" });
+    if (!req.user || !req.user._id)
+      return res.status(401).json({ message: "Unauthorized: User not logged in" });
 
     const appointment = await Appointment.create({
       stylistName,
@@ -50,7 +50,7 @@ export async function createAppointment(req, res) {
       fullPayment,
       duePayment,
       user: req.user._id,
-      status: "Pending"
+      status: "Pending",
     });
 
     await ensureEndTimeAndSave(appointment);
@@ -203,56 +203,57 @@ export async function updateAppointmentStatus(req, res) {
   }
 }
 
-// Save appointments after Stripe payment
+// Confirm Stripe payment
 export async function confirmPayment(req, res) {
-  try {
-    const { sessionId } = req.body;
-    if (!sessionId) return res.status(400).json({ message: "No session ID provided" });
+  const { sessionId } = req.body;
+  if (!sessionId) return res.status(400).json({ message: "No session ID provided" });
 
+  try {
     const session = await stripe.checkout.sessions.retrieve(sessionId);
+
     if (!session) return res.status(400).json({ message: "Invalid session ID" });
 
-    console.log("Stripe session metadata:", session.metadata);
+   
+    const cartItems = session.metadata?.cartItems ? JSON.parse(session.metadata.cartItems) : [];
+    
 
-    // Get cartId from metadata
-    const cart = session.metadata?.cart ? JSON.parse(session.metadata.cart) : [];
-    if (!cart.length) return res.status(400).json({ message: "No cart items in session metadata" });
+    if (session.payment_status === "paid") {
+      const createdAppointments = [];
 
-    if (session.payment_status !== "paid") return res.status(400).json({ message: "Payment not completed" });
+      for (const item of cartItems) {
+        const exists = await Appointment.findOne({
+          user: item.userId,
+          serviceName: item.serviceName,
+          date: item.date,
+          time: item.time
+        });
+        if (exists) continue;
 
-    const createdAppointments = [];
+        const appt = await Appointment.create({
+          stylistName: item.stylistName,
+          serviceName: item.serviceName,
+          subName: item.subName,
+          date: new Date(item.date),
+          time: item.time,
+          endTime: item.endTime || addMinutesToTimeStr(item.time, 60),
+          type: item.type,
+          paymentType: item.paymentType,
+          fullPayment: item.fullPayment,
+          duePayment: item.duePayment,
+          user: item.userId,
+          status: "Completed"
+        });
 
-    for (const item of cart) {
-      const exists = await Appointment.findOne({
-        user: item.userId,
-        serviceName: item.serviceName,
-        date: item.date,
-        time: item.time
+        createdAppointments.push(appt);
+      }
+
+      return res.status(200).json({
+        message: "Payment confirmed! Appointments created.",
+        createdCount: createdAppointments.length
       });
-      if (exists) continue;
-
-      const appt = await Appointment.create({
-        stylistName: item.stylistName,
-        serviceName: item.serviceName,
-        subName: item.subName,
-        date: new Date(item.date),
-        time: item.time,
-        endTime: item.endTime || addMinutesToTimeStr(item.time, 60),
-        type: item.type,
-        paymentType: item.paymentOption === "half" ? "Half" : "Full",
-        fullPayment: Number(item.fullPayment),
-        duePayment: Number(item.duePayment),
-        user: item.userId,
-        status: "Completed"
-      });
-
-      createdAppointments.push(appt);
     }
 
-    res.status(200).json({
-      message: "Payment successful! Appointments created.",
-      createdCount: createdAppointments.length
-    });
+    res.status(400).json({ message: "Payment not completed" });
   } catch (err) {
     console.error("confirmPayment error:", err);
     res.status(500).json({ message: "Failed to confirm payment" });
@@ -261,33 +262,25 @@ export async function confirmPayment(req, res) {
 
 // Create Stripe checkout session
 export const createCheckoutSession = async (req, res) => {
+  const { cartItems, paymentOption } = req.body;
+
+  if (!cartItems?.length) return res.status(400).json({ message: "No items in cart" });
+
   try {
-    const { cartItems, paymentOption, userId } = req.body;
-    if (!cartItems?.length) return res.status(400).json({ message: "No items in cart" });
-
-    // Convert all non-string fields to strings for Stripe metadata
-    const safeCart = cartItems.map(item => ({
-      ...item,
-      date: new Date(item.date).toISOString(),
-      fullPayment: item.fullPayment.toString(),
-      duePayment: item.duePayment.toString(),
-      userId: userId.toString(),
-      paymentOption: paymentOption
-    }));
-
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
       mode: "payment",
-      line_items: safeCart.map(item => ({
+      line_items: cartItems.map(item => ({
         price_data: {
           currency: "lkr",
           product_data: { name: item.serviceName },
-          unit_amount: Math.round(Number(item.fullPayment) * 100)
+          unit_amount: Math.round(item.fullPayment * 100)
         },
         quantity: 1
       })),
       metadata: {
-        cart: JSON.stringify(safeCart),
+        cartItems: JSON.stringify(cartItems), 
+        paymentOption
       },
       success_url: `${process.env.FRONTEND_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.FRONTEND_URL}/cart`
@@ -298,4 +291,4 @@ export const createCheckoutSession = async (req, res) => {
     console.error("Stripe session creation error:", err);
     res.status(500).json({ message: "Failed to create Stripe session" });
   }
-};
+}
