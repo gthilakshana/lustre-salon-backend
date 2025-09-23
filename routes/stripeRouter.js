@@ -72,9 +72,8 @@ router.post("/create-checkout-session", authMiddleware, async (req, res) => {
       payment_method_types: ["card"],
       line_items,
       mode: "payment",
-     success_url: `https://lustre-salon.vercel.app/success?session_id={CHECKOUT_SESSION_ID}`,
-     cancel_url: `https://lustre-salon.vercel.app/`,
-
+      success_url: `${process.env.FRONTEND_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.FRONTEND_URL}/cancel`,
       metadata: { appointmentIds: JSON.stringify(savedIds), paymentOption },
     });
 
