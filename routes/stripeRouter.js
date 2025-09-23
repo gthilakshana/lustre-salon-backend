@@ -6,16 +6,14 @@ import dotenv from "dotenv";
 import Appointment from "../models/appointment.js";
 import { authMiddleware } from "../middleware/auth.js";
 
-// Load environment variables first
 dotenv.config();
 
 if (!process.env.STRIPE_SECRET_KEY) {
   console.error("STRIPE_SECRET_KEY is missing! Cannot initialize Stripe.");
-  process.exit(1); // stop server if key missing
+  process.exit(1);
 }
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2023-08-16" });
-
 const router = express.Router();
 
 // --- Create Checkout Session ---
@@ -24,11 +22,11 @@ router.post("/create-checkout-session", authMiddleware, async (req, res) => {
     const { cartItems, paymentOption } = req.body;
     if (!cartItems?.length) return res.status(400).json({ message: "No items provided" });
 
-    // Save appointments as Pending and collect their IDs
     const savedIds = [];
     for (const item of cartItems) {
       let fullPayment = Number(item.fullPayment ?? item.price ?? 0);
       let duePayment = 0;
+
       if (paymentOption === "half") {
         duePayment = fullPayment / 2;
         fullPayment = fullPayment / 2;
@@ -45,7 +43,12 @@ router.post("/create-checkout-session", authMiddleware, async (req, res) => {
         time: item.time,
         endTime: item.endTime || undefined,
         type: item.type || "Gents",
-        paymentType: paymentOption === "book-only" ? "Book Only" : paymentOption === "half" ? "Half" : "Full",
+        paymentType:
+          paymentOption === "book-only"
+            ? "Book Only"
+            : paymentOption === "half"
+            ? "Half"
+            : "Full",
         fullPayment,
         duePayment,
         user: req.user._id,
@@ -55,8 +58,7 @@ router.post("/create-checkout-session", authMiddleware, async (req, res) => {
       savedIds.push(appt._id.toString());
     }
 
-    // Stripe line_items
-    const line_items = cartItems.map(item => ({
+    const line_items = cartItems.map((item) => ({
       price_data: {
         currency: "lkr",
         product_data: { name: item.subName || item.serviceName || "Service" },
@@ -65,12 +67,13 @@ router.post("/create-checkout-session", authMiddleware, async (req, res) => {
       quantity: 1,
     }));
 
+    // --- Redirect user directly to homepage on success ---
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
       line_items,
       mode: "payment",
-      success_url: `${process.env.FRONTEND_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.FRONTEND_URL}/dateAndTimeSelect`,
+      success_url: `${process.env.FRONTEND_URL}/?payment=success`, 
+      cancel_url: `${process.env.FRONTEND_URL}/`,
       metadata: { appointmentIds: JSON.stringify(savedIds), paymentOption },
     });
 
@@ -85,8 +88,13 @@ router.post("/create-checkout-session", authMiddleware, async (req, res) => {
 router.post("/webhook", bodyParser.raw({ type: "application/json" }), async (req, res) => {
   const sig = req.headers["stripe-signature"];
   let event;
+
   try {
-    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+    event = stripe.webhooks.constructEvent(
+      req.body,
+      sig,
+      process.env.STRIPE_WEBHOOK_SECRET
+    );
   } catch (err) {
     console.log("Webhook signature failed:", err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);
@@ -95,13 +103,14 @@ router.post("/webhook", bodyParser.raw({ type: "application/json" }), async (req
   if (event.type === "checkout.session.completed") {
     const session = event.data.object;
     const appointmentIds = JSON.parse(session.metadata?.appointmentIds || "[]");
-    try {
-      if (appointmentIds.length) {
+
+    if (appointmentIds.length) {
+      try {
         await Appointment.updateMany({ _id: { $in: appointmentIds } }, { status: "Completed" });
         console.log(`Marked ${appointmentIds.length} appointment(s) completed via webhook.`);
+      } catch (err) {
+        console.error("Failed to update appointments in webhook:", err);
       }
-    } catch (e) {
-      console.error("Failed to update appointments in webhook:", e);
     }
   }
 

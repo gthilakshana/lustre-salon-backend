@@ -272,7 +272,7 @@ export const createCheckoutSession = async (req, res) => {
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
       mode: "payment",
-      // Stripe does NOT support LKR directly. Use a supported currency.
+      
       line_items: cartItems.map(item => ({
         price_data: {
           currency: "usd", // <-- Change to a supported currency
