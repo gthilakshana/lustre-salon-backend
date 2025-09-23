@@ -286,7 +286,7 @@ export const createCheckoutSession = async (req, res) => {
         paymentOption
       },
       success_url: `${process.env.FRONTEND_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.FRONTEND_URL}/cart`
+      cancel_url: `${process.env.FRONTEND_URL}/dateAndTimeSelect`
     });
     res.status(200).json({ id: session.id });
   } catch (err) {
