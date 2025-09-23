@@ -1,5 +1,4 @@
 import Appointment from "../models/appointment.js";
-import User from "../models/user.js";
 import Stripe from "stripe";
 import dotenv from "dotenv";
 import { combineDateAndTime, addMinutesToTimeStr } from "../utils/timeUtils.js";
@@ -7,7 +6,7 @@ dotenv.config();
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2023-08-16" });
 
-// Helper: ensure appointment has endTime
+
 export async function ensureEndTimeAndSave(appt) {
   if (!appt.endTime || appt.endTime.trim() === "") {
     const computed = addMinutesToTimeStr(appt.time || "9:00 AM", 60);
