@@ -1,53 +1,93 @@
 import Appointment from "../models/appointment.js";
+import User from "../models/user.js";
+import Stripe from "stripe";
+import dotenv from "dotenv";
+import { combineDateAndTime, addMinutesToTimeStr } from "../utils/timeUtils.js";
+dotenv.config();
 
-// ---------------- Create appointment (general) ----------------
-export const createAppointment = async (req, res) => {
-  try {
-    const { stylistName, serviceName, subName, date, time, type, fullPayment, duePayment, paymentType } = req.body;
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2023-08-16" });
 
-    if (!req.user || !req.user._id) {
-      return res.status(401).json({ message: "Unauthorized: User not logged in" });
+// Helper: ensure appointment has endTime
+export async function ensureEndTimeAndSave(appt) {
+  if (!appt.endTime || appt.endTime.trim() === "") {
+    const computed = addMinutesToTimeStr(appt.time || "9:00 AM", 60);
+    appt.endTime = computed;
+    await appt.save();
+  }
+}
+
+// Update appointment statuses based on date + endTime
+export async function updateStatusesIfNeeded(appointments) {
+  const now = new Date();
+  const updates = [];
+  for (const a of appointments) {
+    await ensureEndTimeAndSave(a);
+    const endDateTime = combineDateAndTime(a.date, a.endTime);
+    if (a.status !== "Completed" && endDateTime <= now) {
+      a.status = "Completed";
+      updates.push(a.save());
     }
+  }
+  if (updates.length) await Promise.all(updates);
+}
 
-    const newAppointment = await Appointment.create({
+// Create appointment 
+export async function createAppointment(req, res) {
+  try {
+    const { stylistName, serviceName, subName, date, time, endTime, type, fullPayment, duePayment, paymentType } = req.body;
+    if (!req.user || !req.user._id)
+      return res.status(401).json({ message: "Unauthorized: User not logged in" });
+
+    const appointment = await Appointment.create({
       stylistName,
       serviceName,
       subName,
       date,
       time,
+      endTime: endTime || undefined,
       type,
       paymentType,
       fullPayment,
       duePayment,
-      user: req.user._id
+      user: req.user._id,
+      status: "Pending",
     });
 
-    res.status(201).json({
-      message: "Appointment created successfully",
-      appointment: newAppointment
-    });
+    await ensureEndTimeAndSave(appointment);
+
+    res.status(201).json({ message: "Appointment created successfully", appointment });
   } catch (err) {
     console.error("Error creating appointment:", err);
     res.status(500).json({ message: err.message || "Failed to create appointment" });
   }
-};
+}
 
-// ---------------- Get all appointments ----------------
-export const getAppointments = async (req, res) => {
+// Get all appointments (for admin)
+export async function getAppointments(req, res) {
   try {
-    const appointments = await Appointment.find()
-      .populate("user", "fullName email")         
-      .populate("serviceName", "serviceName")    
-      .populate("subName", "subName");            
+    const appointments = await Appointment.find().populate("user", "fullName email");
     res.status(200).json(appointments);
   } catch (err) {
     console.error("Get appointments error:", err);
     res.status(500).json({ message: err.message || "Failed to fetch appointments" });
   }
-};
+}
 
-// ---------------- Delete appointment ----------------
-export const deleteAppointment = async (req, res) => {
+// Get my appointments (user)
+export async function getMyAppointments(req, res) {
+  try {
+    let appointments = await Appointment.find({ user: req.user._id });
+    await updateStatusesIfNeeded(appointments);
+    appointments = await Appointment.find({ user: req.user._id });
+    res.status(200).json(appointments);
+  } catch (err) {
+    console.error("Error fetching my appointments:", err);
+    res.status(500).json({ message: err.message || "Failed to fetch appointments" });
+  }
+}
+
+// Delete appointment
+export async function deleteAppointment(req, res) {
   try {
     const { id } = req.params;
     const deleted = await Appointment.findByIdAndDelete(id);
@@ -57,40 +97,34 @@ export const deleteAppointment = async (req, res) => {
     console.error("Error deleting appointment:", err);
     res.status(500).json({ message: err.message || "Failed to delete appointment" });
   }
-};
+}
 
-// ---------------- Book Only ----------------
-export const saveAppointmentsBookOnly = async (req, res) => {
+// Book only (no payment)
+export async function saveAppointmentsBookOnly(req, res) {
   try {
     const { appointments } = req.body;
-    if (!req.user || !req.user._id) {
-      return res.status(401).json({ message: "Unauthorized: User not logged in" });
-    }
-    if (!appointments?.length) {
-      return res.status(400).json({ message: "No appointments provided" });
-    }
+    if (!req.user || !req.user._id) return res.status(401).json({ message: "Unauthorized" });
+    if (!appointments?.length) return res.status(400).json({ message: "No appointments provided" });
 
     const savedAppointments = [];
 
     for (const item of appointments) {
-      if (!item.serviceName || !item.subName) {
-        throw new Error("serviceName and subName are required for appointment");
-      }
-
-      const appointment = await Appointment.create({
-        stylistName: item.stylistName || "Unnamed Stylist",
+      const appt = await Appointment.create({
+        stylistName: item.stylistName,
         serviceName: item.serviceName,
         subName: item.subName,
         date: new Date(item.date),
         time: item.time,
+        endTime: item.endTime || undefined,
         type: item.type || item.gender,
         paymentType: "Book Only",
         fullPayment: 0,
-        duePayment: item.duePayment || Number(item.price) || 0,
-        user: req.user._id
+        duePayment: Number(item.price || 0),
+        user: req.user._id,
+        status: "Pending"
       });
-
-      savedAppointments.push(appointment);
+      await ensureEndTimeAndSave(appt);
+      savedAppointments.push(appt);
     }
 
     res.status(201).json({ message: "Appointments booked successfully", savedAppointments });
@@ -98,50 +132,39 @@ export const saveAppointmentsBookOnly = async (req, res) => {
     console.error("Error booking appointments:", err);
     res.status(500).json({ message: err.message || "Failed to book appointments" });
   }
-};
+}
 
-
-// ---------------- Get my appointments ----------------
-export const getMyAppointments = async (req, res) => {
-  try {
-    const appointments = await Appointment.find({ user: req.user._id })
-      .populate("user", "fullName email")         
-      .populate("serviceName", "serviceName")
-      .populate("subName", "subName");
-    res.status(200).json(appointments);
-  } catch (err) {
-    console.error("Error fetching my appointments:", err);
-    res.status(500).json({ message: err.message || "Failed to fetch appointments" });
-  }
-};
-
-// ---------------- Save after payment ----------------
-export const saveAppointmentsAfterPayment = async (req, res) => {
+// Save after payment 
+export async function saveAppointmentsAfterPayment(req, res) {
   try {
     const { cartItems, paymentOption } = req.body;
-    if (!req.user || !req.user._id) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
+    if (!req.user || !req.user._id) return res.status(401).json({ message: "Unauthorized" });
 
     const savedAppointments = [];
-    for (const item of cartItems) {
-      let fullPayment = item.fullPayment || 0;
-      let duePayment = 0;
 
+    for (const item of cartItems) {
+      const exists = await Appointment.findOne({
+        user: req.user._id,
+        serviceName: item.serviceName,
+        date: item.date,
+        time: item.time
+      });
+      if (exists) continue; 
+
+      let fullPayment = Number(item.fullPayment || 0);
+      let duePayment = 0;
       if (paymentOption === "half") {
+        duePayment = fullPayment / 2;
         fullPayment = fullPayment / 2;
-        duePayment = fullPayment;
-      } else if (paymentOption === "book-only") {
-        fullPayment = 0;
-        duePayment = item.fullPayment || 0;
       }
 
-      const appointment = await Appointment.create({
-        stylistName: item.stylistName || "Unnamed Stylist",
+      const appt = await Appointment.create({
+        stylistName: item.stylistName,
         serviceName: item.serviceName,
         subName: item.subName,
         date: new Date(item.date),
         time: item.time,
+        endTime: item.endTime || undefined,
         type: item.type,
         paymentType: paymentOption === "half" ? "Half" : "Full",
         fullPayment,
@@ -150,15 +173,122 @@ export const saveAppointmentsAfterPayment = async (req, res) => {
         status: "Pending"
       });
 
-      savedAppointments.push(appointment);
+      await ensureEndTimeAndSave(appt);
+      savedAppointments.push(appt);
     }
 
-    res.status(201).json({
-      message: "Appointments saved successfully",
-      savedAppointments
-    });
+    res.status(201).json({ message: "Appointments saved successfully", savedAppointments });
   } catch (err) {
     console.error("Error saving appointments after payment:", err);
     res.status(500).json({ message: err.message || "Failed to save appointments" });
   }
-};
+}
+
+
+// Update status manually
+export async function updateAppointmentStatus(req, res) {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+    if (!["Pending", "Completed"].includes(status))
+      return res.status(400).json({ message: "Invalid status value" });
+
+    const updated = await Appointment.findByIdAndUpdate(id, { status }, { new: true });
+    if (!updated) return res.status(404).json({ message: "Appointment not found" });
+
+    res.status(200).json({ message: `Appointment marked as ${status}`, appointment: updated });
+  } catch (err) {
+    console.error("Error updating appointment status:", err);
+    res.status(500).json({ message: err.message || "Failed to update status" });
+  }
+}
+
+// Confirm Stripe payment
+export async function confirmPayment(req, res) {
+  const { sessionId } = req.body;
+  if (!sessionId) return res.status(400).json({ message: "No session ID provided" });
+
+  try {
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+    if (!session) return res.status(400).json({ message: "Invalid session ID" });
+
+   
+    const cartItems = session.metadata?.cartItems ? JSON.parse(session.metadata.cartItems) : [];
+    
+
+    if (session.payment_status === "paid") {
+      const createdAppointments = [];
+
+      for (const item of cartItems) {
+        const exists = await Appointment.findOne({
+          user: item.userId,
+          serviceName: item.serviceName,
+          date: item.date,
+          time: item.time
+        });
+        if (exists) continue;
+
+        const appt = await Appointment.create({
+          stylistName: item.stylistName,
+          serviceName: item.serviceName,
+          subName: item.subName,
+          date: new Date(item.date),
+          time: item.time,
+          endTime: item.endTime || addMinutesToTimeStr(item.time, 60),
+          type: item.type,
+          paymentType: item.paymentType,
+          fullPayment: item.fullPayment,
+          duePayment: item.duePayment,
+          user: item.userId,
+          status: "Completed"
+        });
+
+        createdAppointments.push(appt);
+      }
+
+      return res.status(200).json({
+        message: "Payment confirmed! Appointments created.",
+        createdCount: createdAppointments.length
+      });
+    }
+
+    res.status(400).json({ message: "Payment not completed" });
+  } catch (err) {
+    console.error("confirmPayment error:", err);
+    res.status(500).json({ message: "Failed to confirm payment" });
+  }
+}
+
+// Create Stripe checkout session
+export const createCheckoutSession = async (req, res) => {
+  const { cartItems, paymentOption } = req.body;
+
+  if (!cartItems?.length) return res.status(400).json({ message: "No items in cart" });
+
+  try {
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      mode: "payment",
+      line_items: cartItems.map(item => ({
+        price_data: {
+          currency: "lkr",
+          product_data: { name: item.serviceName },
+          unit_amount: Math.round(item.fullPayment * 100)
+        },
+        quantity: 1
+      })),
+      metadata: {
+        cartItems: JSON.stringify(cartItems), 
+        paymentOption
+      },
+      success_url: `${process.env.FRONTEND_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.FRONTEND_URL}/cart`
+    });
+
+    res.status(200).json({ id: session.id });
+  } catch (err) {
+    console.error("Stripe session creation error:", err);
+    res.status(500).json({ message: "Failed to create Stripe session" });
+  }
+}

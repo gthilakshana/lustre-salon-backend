@@ -37,6 +37,13 @@ const appointmentSchema = new mongoose.Schema({
     enum: ["Full", "Half", "Book Only"],
     required: true
   },
+
+   status: {
+    type: String,
+    enum: ["Pending", "Completed"], 
+    default: "Pending" 
+  },
+
   fullPayment: {
     type: Number,
     required: true
