@@ -15,6 +15,7 @@ import Appointment from "./models/appointment.js";
 import Message from "./models/message.js";
 import { combineDateAndTime, addMinutesToTimeStr } from "./utils/timeUtils.js";
 
+// Load environment variables
 dotenv.config();
 
 const app = express();
@@ -23,7 +24,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// JWT middleware to attach user info from token
+// JWT middleware
 app.use((req, res, next) => {
   const token = req.header("Authorization")?.replace("Bearer ", "");
   if (token) {
@@ -45,7 +46,6 @@ mongoose.connect(process.env.MONGO_URI)
     process.exit(1);
   });
 
-
 // --- Auto-delete messages older than 5 days ---
 cron.schedule("0 0 * * *", async () => {
   try {
@@ -59,7 +59,6 @@ cron.schedule("0 0 * * *", async () => {
 
 // --- Routes ---
 app.get("/", (req, res) => res.send("API is running"));
-
 app.use("/api/users", userRouter);
 app.use("/api/messages", messageRouter);
 app.use("/api/appointments", appointmentRouter);
@@ -80,7 +79,6 @@ cron.schedule("*/5 * * * *", async () => {
       }
 
       const endDateTime = combineDateAndTime(a.date, a.endTime);
-      console.log(`Appointment ${a._id} ends at ${endDateTime}, now=${now}`);
 
       if (endDateTime <= now) {
         a.status = "Completed";
@@ -92,8 +90,6 @@ cron.schedule("*/5 * * * *", async () => {
     console.error("Cron job error:", err);
   }
 });
-
-
 
 // --- Start server ---
 const PORT = process.env.PORT || 5000;

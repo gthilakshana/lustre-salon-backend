@@ -6,11 +6,19 @@ import dotenv from "dotenv";
 import Appointment from "../models/appointment.js";
 import { authMiddleware } from "../middleware/auth.js";
 
+// Load environment variables first
 dotenv.config();
-const router = express.Router();
+
+if (!process.env.STRIPE_SECRET_KEY) {
+  console.error("STRIPE_SECRET_KEY is missing! Cannot initialize Stripe.");
+  process.exit(1); // stop server if key missing
+}
+
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2023-08-16" });
 
-// Create Checkout Session - protected
+const router = express.Router();
+
+// --- Create Checkout Session ---
 router.post("/create-checkout-session", authMiddleware, async (req, res) => {
   try {
     const { cartItems, paymentOption } = req.body;
@@ -30,13 +38,13 @@ router.post("/create-checkout-session", authMiddleware, async (req, res) => {
       }
 
       const appt = await Appointment.create({
-        stylistName: item.stylistName || item.stylist || "Unnamed Stylist",
-        serviceName: item.serviceName || item.title || "Service",
-        subName: item.subName || item.subtitle || "",
+        stylistName: item.stylistName || "Unnamed Stylist",
+        serviceName: item.serviceName || "Service",
+        subName: item.subName || "",
         date: new Date(item.date),
         time: item.time,
         endTime: item.endTime || undefined,
-        type: item.type || item.gender || "Gents",
+        type: item.type || "Gents",
         paymentType: paymentOption === "book-only" ? "Book Only" : paymentOption === "half" ? "Half" : "Full",
         fullPayment,
         duePayment,
@@ -47,19 +55,15 @@ router.post("/create-checkout-session", authMiddleware, async (req, res) => {
       savedIds.push(appt._id.toString());
     }
 
-    // Build line_items for Stripe (payable amounts)
-    const line_items = cartItems.map(item => {
-      const payable = Number(item.fullPayment ?? item.price ?? 0);
-      const amount = Math.round(payable * 100);
-      return {
-        price_data: {
-          currency: "lkr",
-          product_data: { name: item.subName || item.serviceName || "Service" },
-          unit_amount: amount,
-        },
-        quantity: 1,
-      };
-    });
+    // Stripe line_items
+    const line_items = cartItems.map(item => ({
+      price_data: {
+        currency: "lkr",
+        product_data: { name: item.subName || item.serviceName || "Service" },
+        unit_amount: Math.round((item.fullPayment ?? item.price ?? 0) * 100),
+      },
+      quantity: 1,
+    }));
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
@@ -67,7 +71,7 @@ router.post("/create-checkout-session", authMiddleware, async (req, res) => {
       mode: "payment",
       success_url: `${process.env.FRONTEND_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.FRONTEND_URL}/dateAndTimeSelect`,
-      metadata: { appointmentIds: JSON.stringify(savedIds), paymentOption }
+      metadata: { appointmentIds: JSON.stringify(savedIds), paymentOption },
     });
 
     res.json({ id: session.id });
@@ -77,7 +81,7 @@ router.post("/create-checkout-session", authMiddleware, async (req, res) => {
   }
 });
 
-// Webhook
+// --- Webhook ---
 router.post("/webhook", bodyParser.raw({ type: "application/json" }), async (req, res) => {
   const sig = req.headers["stripe-signature"];
   let event;
