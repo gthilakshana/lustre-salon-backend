@@ -1,9 +1,9 @@
-// routes/stripeRouter.js
 import express from "express";
 import Stripe from "stripe";
 import bodyParser from "body-parser";
 import dotenv from "dotenv";
 import Appointment from "../models/appointment.js";
+// import { sendInvoiceEmail } from "../utils/sendInvoice.js";
 import { authMiddleware } from "../middleware/auth.js";
 
 dotenv.config();
