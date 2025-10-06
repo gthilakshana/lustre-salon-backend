@@ -1,6 +1,8 @@
 import Appointment from "../models/appointment.js";
 import Stripe from "stripe";
 import dotenv from "dotenv";
+import dayjs from "dayjs";
+import User from "../models/user.js";
 import { parse, format } from "date-fns";
 
 import { combineDateAndTime, addMinutesToTimeStr,parseTimeToHoursMinutes } from "../utils/timeUtils.js";
@@ -63,6 +65,7 @@ export async function createAppointment(req, res) {
             serviceName,
             subName,
             date,
+          
             time,
             endTime: endTime || undefined,
             type,
@@ -81,27 +84,43 @@ export async function createAppointment(req, res) {
     }
 }
 
+// Get all appointments
 export async function getAppointments(req, res) {
-    try {
-        const appointments = await Appointment.find().populate("user", "fullName email");
-        res.status(200).json(appointments);
-    } catch (err) {
-        console.error("Get appointments error:", err);
-        res.status(500).json({ message: err.message || "Failed to fetch appointments" });
-    }
+  try {
+    const appointments = await Appointment.find()
+      .populate("user", "fullName mobileNumber email") 
+      .select("serviceName subName stylistName date time paymentType fullPayment duePayment status createdAt"); 
+    res.status(200).json(appointments);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 }
 
 export async function getMyAppointments(req, res) {
     try {
-        let appointments = await Appointment.find({ user: req.user._id });
-        await updateStatusesIfNeeded(appointments);
-        appointments = await Appointment.find({ user: req.user._id });
-        res.status(200).json(appointments);
+      
+        let appointments = await Appointment.find({ user: req.user._id })
+            .select("serviceName subName stylistName date time paymentType fullPayment duePayment status createdAt"); 
+
+       const user = await User.findById(req.user._id)
+            .select("fullName mobileNumber email");
+
+        if (!user) {
+
+            return res.status(404).json({ message: "User not found." });
+        }
+        
+        res.status(200).json({ 
+            appointments, 
+            user          
+        });
     } catch (err) {
         console.error("Error fetching my appointments:", err);
         res.status(500).json({ message: err.message || "Failed to fetch appointments" });
     }
 }
+
+
 
 export async function deleteAppointment(req, res) {
     try {
@@ -141,6 +160,7 @@ export async function saveAppointmentsBookOnly(req, res) {
                 serviceName: item.serviceName,
                 subName: item.subName,
                 date: new Date(item.date),
+               
                 time: item.time,
                 endTime: item.endTime || undefined,
                 type: item.type || item.gender,
@@ -189,6 +209,7 @@ export async function saveAppointmentsAfterPayment(req, res) {
                 serviceName: item.serviceName,
                 subName: item.subName,
                 date: new Date(item.date),
+              
                 time: item.time,
                 endTime: item.endTime || undefined,
                 type: item.type,
@@ -264,6 +285,7 @@ export async function confirmPayment(req, res) {
                     serviceName: item.serviceName,
                     subName: item.subName,
                     date: new Date(item.date),
+                  
                     time: item.time,
                     endTime: item.endTime || addMinutesToTimeStr(item.time, 60),
                     type: item.type,
@@ -319,8 +341,6 @@ export const createCheckoutSession = async (req, res) => {
 };
 
 
-
-
 export const getAppointmentsByDate = async (req, res) => {
     try {
         const { day } = req.query;
@@ -349,7 +369,7 @@ export const getAppointmentsByDate = async (req, res) => {
 // ──────────────────────────────────────────────────────────────────────────────
 
 export const getAppointmentsByStylistAndDate = async (req, res) => {
-   
+
     const { stylistName, date } = req.query;
 
     if (!stylistName || !date) {
@@ -389,3 +409,56 @@ export const getAppointmentsByStylistAndDate = async (req, res) => {
         return res.status(500).json({ message: "Server error fetching appointments", error: error.message });
     }
 };
+
+
+
+
+export const generateInvoice = async (req, res) => {
+  try {
+    const { createdAt } = req.body; 
+    if (!createdAt) {
+      return res.status(400).json({ message: "Created date is required" });
+    }
+
+
+    const start = new Date(createdAt);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(createdAt);
+    end.setHours(23, 59, 59, 999);
+
+   
+    const appointments = await Appointment.find({
+      createdAt: { $gte: start, $lte: end },
+      status: "Pending",
+    }).populate("user", "fullName email mobileNumber"); 
+
+    if (!appointments.length) {
+      return res.status(404).json({ message: "No pending appointments found for this created date" });
+    }
+
+    res.json({
+      appointments: appointments.map(app => ({
+        serviceName: app.serviceName,
+        subName: app.subName,
+        stylistName: app.stylistName,
+        time: app.time,
+        date: app.date,
+        fullPayment: app.fullPayment,
+        duePayment: app.duePayment,
+        status: app.status,
+        createdAt: app.createdAt,  
+      })),
+      customer: {
+        name: appointments[0].user.fullName,
+        email: appointments[0].user.email,
+        mobile: appointments[0].user.mobileNumber,
+      },
+    });
+
+  } catch (err) {
+    console.error("Invoice generation error:", err);
+    res.status(500).json({ message: "Server error while generating invoice" });
+  }
+};
+
+

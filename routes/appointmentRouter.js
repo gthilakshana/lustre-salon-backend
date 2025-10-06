@@ -9,7 +9,8 @@ import {
     updateAppointmentStatus,
     confirmPayment,
     getAppointmentsByDate,
-    getAppointmentsByStylistAndDate 
+    getAppointmentsByStylistAndDate,
+    generateInvoice 
 } from "../controllers/appointmentController.js";
 import { authMiddleware } from "../middleware/auth.js";
 
@@ -29,5 +30,7 @@ appointmentRouter.get("/by-date", authMiddleware, getAppointmentsByDate);
 appointmentRouter.get("/by-stylist-date", getAppointmentsByStylistAndDate);
 
 appointmentRouter.post("/confirm-payment", authMiddleware, confirmPayment);
+
+appointmentRouter.post("/generate-invoice", authMiddleware, generateInvoice);
 
 export default appointmentRouter;
