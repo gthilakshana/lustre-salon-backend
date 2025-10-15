@@ -100,63 +100,26 @@ export const createCheckoutSession = async (req, res) => {
 // confirmPayment (Updated to use TempCart ID)
 // ──────────────────────────────────────────────────────────────────────────────
 export async function confirmPayment(req, res) {
-
     const { sessionId } = req.body;
     if (!sessionId) return res.status(400).json({ message: "No session ID provided" });
 
     try {
         const session = await stripe.checkout.sessions.retrieve(sessionId);
-        if (!session) return res.status(400).json({ message: "Invalid session ID" });
-
-        const { tempCartId, paymentOption } = session.metadata;
-        if (!tempCartId) return res.status(400).json({ message: "Missing TempCart ID in session metadata." });
-
-        const tempCart = await TempCart.findById(tempCartId);
-        if (!tempCart || !tempCart.cartItems?.length) return res.status(404).json({ message: "TempCart data not found or already processed." });
-
-        const cartItems = tempCart.cartItems;
-        const isHalfPayment = paymentOption === "half";
         
         if (session.payment_status === "paid") {
-            const createdAppointments = [];
-            for (const item of cartItems) {
-               
-                const exists = await Appointment.findOne({
-                    user: tempCart.userId,
-                    serviceName: item.serviceName,
-                    date: new Date(item.date),
-                    time: item.time
-                });
-                if (exists) continue;
-
-                // Appointment creation logic...
-                const originalTotal = Number(item.price || 0);
-                const amountPaidNow = Number(item.fullPayment || 0); 
-                const finalDuePayment = originalTotal - amountPaidNow;
-
-                const appt = await Appointment.create({
-                  
-                    user: tempCart.userId, 
-                    paymentType: isHalfPayment ? "Half" : "Full", 
-                    fullPayment: amountPaidNow, 
-                    duePayment: finalDuePayment < 0 ? 0 : finalDuePayment, 
-                    status: "Completed",
-                  
-                });
-                createdAppointments.push(appt);
-            }
-         
-            await TempCart.findByIdAndDelete(tempCartId);
-
+            // Success! Appointment creation is handled by the Webhook (stripeWebhookHandler).
             return res.status(200).json({
-                message: "Payment confirmed! Appointments created.",
-                createdCount: createdAppointments.length
+                message: "Payment successfully confirmed. Appointments are being created by the server.",
+                status: "processing"
             });
         }
-        res.status(400).json({ message: "Payment not completed" });
+        // If payment is not 'paid' (e.g., 'unpaid', 'requires_payment_method')
+        res.status(400).json({ message: "Payment not completed or failed." });
+        
     } catch (err) {
-        console.error("confirmPayment error:", err);
-        res.status(500).json({ message: "Failed to confirm payment" });
+        // Log the error but don't crash the server with a 500
+        console.error("confirmPayment verification error:", err.message);
+        res.status(500).json({ message: "Failed to verify payment status with Stripe." });
     }
 }
 
