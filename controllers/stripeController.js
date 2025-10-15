@@ -99,6 +99,10 @@ export const createCheckoutSession = async (req, res) => {
 // ──────────────────────────────────────────────────────────────────────────────
 // confirmPayment (Updated to use TempCart ID)
 // ──────────────────────────────────────────────────────────────────────────────
+// stripeController.js
+
+// ... (other imports and setup)
+
 export async function confirmPayment(req, res) {
 
     const { sessionId } = req.body;
@@ -121,34 +125,34 @@ export async function confirmPayment(req, res) {
             const createdAppointments = [];
             
             for (const item of cartItems) {
-               
-                if (!item.serviceName || !item.date || !item.time || !tempCart.userId) {
-                    console.warn(`Skipping cart item due to missing data: ${JSON.stringify(item)}`);
-                    continue; 
-                }
-                
-               
+                // 🛑 SAFETY CHECK: Use the validated date object
                 const appointmentDate = new Date(item.date);
-                if (isNaN(appointmentDate)) {
-                    console.warn(`Skipping cart item due to invalid date: ${item.date}`);
-                    continue;
-                }
 
-             
                 const exists = await Appointment.findOne({
                     user: tempCart.userId,
                     serviceName: item.serviceName,
-                    date: appointmentDate, 
+                    date: appointmentDate,
                     time: item.time
                 });
                 if (exists) continue;
 
-              
+               
                 const originalTotal = Number(item.price || 0);
                 const amountPaidNow = Number(item.fullPayment || 0); 
                 const finalDuePayment = originalTotal - amountPaidNow;
 
+                
                 const appt = await Appointment.create({
+                
+                    stylistName: item.stylistName,
+                    serviceName: item.serviceName,
+                    subName: item.subName,
+                    date: appointmentDate, 
+                    time: item.time,
+                    type: item.type, 
+                    endTime: item.endTime || addMinutesToTimeStr(item.time, 60), 
+
+                 
                     user: tempCart.userId, 
                     paymentType: isHalfPayment ? "Half" : "Full", 
                     fullPayment: amountPaidNow, 
@@ -158,7 +162,6 @@ export async function confirmPayment(req, res) {
                 createdAppointments.push(appt);
             }
           
-           
             await TempCart.findByIdAndDelete(tempCartId);
 
             return res.status(200).json({
@@ -168,13 +171,11 @@ export async function confirmPayment(req, res) {
         }
         res.status(400).json({ message: "Payment not completed" });
     } catch (err) {
-    
-        console.error("confirmPayment fatal error:", err);
-      
+     
+        console.error("confirmPayment fatal error:", err); 
         res.status(500).json({ message: "Failed to confirm payment due to a server error." });
     }
 }
-
 // ──────────────────────────────────────────────────────────────────────────────
 // stripeWebhookHandler (Updated to use TempCart ID)
 // ──────────────────────────────────────────────────────────────────────────────
