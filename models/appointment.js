@@ -29,6 +29,13 @@ const appointmentSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  endTime: {
+        type: String,
+        // Not required here, as the controller can calculate it, 
+        // but it must exist in the schema.
+    }, 
+
+
   type: {
     type: String,
     enum: ["Gents", "Ladies"],
@@ -52,13 +59,19 @@ const appointmentSchema = new mongoose.Schema({
   },
   duePayment: {
     type: Number,
-    required: true
+    required: true,
+    default: 0 
   },
   user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
     required: true
-  }
+  },
+  tempCartId: { 
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "TempCart",
+        // Not required, as "Book Only" or manual appointments won't have it
+    }
 }, { timestamps: true });
 
 const Appointment = mongoose.model("Appointment", appointmentSchema);

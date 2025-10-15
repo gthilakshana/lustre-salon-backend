@@ -36,9 +36,9 @@ export function combineDateAndTime(dateInput, timeStr) {
 
     const serverOffsetMinutes = date.getTimezoneOffset();
     
-    const slstOffsetMinutes = -330; 
+    const usOffsetMinutes = 300;
 
-    const requiredAdjustmentMinutes = slstOffsetMinutes - serverOffsetMinutes;
+       const requiredAdjustmentMinutes = usOffsetMinutes - serverOffsetMinutes;
 
     date.setHours(hours, minutes, 0, 0); 
 

@@ -3,11 +3,11 @@ import {
     createAppointment,
     getAppointments,
     deleteAppointment,
-    saveAppointmentsAfterPayment,
+    // saveAppointmentsAfterPayment,
     saveAppointmentsBookOnly,
     getMyAppointments,
     updateAppointmentStatus,
-    confirmPayment,
+  
     getAppointmentsByDate,
     getAppointmentsByStylistAndDate,
     generateInvoice 
@@ -21,7 +21,7 @@ appointmentRouter.post("/", authMiddleware, createAppointment);
 appointmentRouter.get("/", authMiddleware, getAppointments); 
 appointmentRouter.delete("/:id", authMiddleware, deleteAppointment);
 appointmentRouter.get("/my", authMiddleware, getMyAppointments);
-appointmentRouter.post("/cart", authMiddleware, saveAppointmentsAfterPayment);
+// appointmentRouter.post("/cart", authMiddleware, saveAppointmentsAfterPayment);
 appointmentRouter.post("/book-only", authMiddleware, saveAppointmentsBookOnly);
 appointmentRouter.patch("/:id/status", authMiddleware, updateAppointmentStatus);
 
@@ -29,7 +29,7 @@ appointmentRouter.get("/by-date", authMiddleware, getAppointmentsByDate);
 
 appointmentRouter.get("/by-stylist-date", getAppointmentsByStylistAndDate);
 
-appointmentRouter.post("/confirm-payment", authMiddleware, confirmPayment);
+
 
 appointmentRouter.post("/generate-invoice", authMiddleware, generateInvoice);
 

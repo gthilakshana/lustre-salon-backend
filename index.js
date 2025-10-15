@@ -5,26 +5,39 @@ import cors from "cors";
 import jwt from "jsonwebtoken";
 import cron from "node-cron";
 
+// Routes
 import stripeRouter from "./routes/stripeRouter.js";
 import userRouter from "./routes/userRouter.js";
-import serviceRouter from "./routes/serviceRouter.js";  
+import serviceRouter from "./routes/serviceRouter.js";
 import messageRouter from "./routes/messageRouter.js";
 import appointmentRouter from "./routes/appointmentRouter.js";
+import { stripeWebhookHandler } from './controllers/stripeController.js'; 
 
+// Models
 import Appointment from "./models/appointment.js";
 import Message from "./models/message.js";
+
+// Utils
 import { combineDateAndTime, addMinutesToTimeStr } from "./utils/timeUtils.js";
 
-// Load environment variables
 dotenv.config();
-
 const app = express();
 
-// --- Middleware ---
+// ----------------------------------------------------------------------
+// 1️⃣ STRIPE WEBHOOK ROUTE (MUST come before express.json())
+// ----------------------------------------------------------------------
+// 1️⃣ STRIPE WEBHOOK ROUTE (MUST come before express.json())
+app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), stripeWebhookHandler); 
+
+
+// ----------------------------------------------------------------------
+// 2️⃣ GENERAL MIDDLEWARE
+// ----------------------------------------------------------------------
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// JWT middleware
+// JWT Authentication Middleware
 app.use((req, res, next) => {
   const token = req.header("Authorization")?.replace("Bearer ", "");
   if (token) {
@@ -38,34 +51,43 @@ app.use((req, res, next) => {
   next();
 });
 
-// --- Connect to MongoDB ---
-mongoose.connect(process.env.MONGO_URI)
+// ----------------------------------------------------------------------
+// 3️⃣ DATABASE CONNECTION
+// ----------------------------------------------------------------------
+mongoose
+  .connect(process.env.MONGO_URI)
   .then(() => console.log("Database connected successfully"))
-  .catch(err => {
+  .catch((err) => {
     console.error("Database connection failed:", err);
     process.exit(1);
   });
 
-// --- Auto-delete messages older than 5 days ---
-cron.schedule("0 0 * * *", async () => {
-  try {
-    const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
-    const result = await Message.deleteMany({ createdAt: { $lt: fiveDaysAgo } });
-    console.log(`Auto-deleted ${result.deletedCount} messages older than 5 days`);
-  } catch (err) {
-    console.error("Error auto-deleting old messages:", err);
-  }
-});
+// ----------------------------------------------------------------------
+// 4️⃣ API ROUTES
+// ----------------------------------------------------------------------
+app.get("/", (req, res) => res.send("Lustre Salon API is running"));
 
-// --- Routes ---
-app.get("/", (req, res) => res.send("API is running"));
 app.use("/api/users", userRouter);
 app.use("/api/messages", messageRouter);
 app.use("/api/appointments", appointmentRouter);
 app.use("/api/services", serviceRouter);
+
+// Stripe routes (excluding webhook, already defined above)
 app.use("/api/stripe", stripeRouter);
 
-// --- Cron job: mark appointments Completed after end time ---
+// ----------------------------------------------------------------------
+// 5️⃣ CRON JOBS
+// ----------------------------------------------------------------------
+cron.schedule("0 0 * * *", async () => {
+  try {
+    const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
+    const result = await Message.deleteMany({ createdAt: { $lt: fiveDaysAgo } });
+    console.log(`[CRON] Deleted ${result.deletedCount} old messages.`);
+  } catch (err) {
+    console.error("[CRON] Message cleanup error:", err);
+  }
+});
+
 cron.schedule("*/5 * * * *", async () => {
   try {
     const now = new Date();
@@ -73,6 +95,7 @@ cron.schedule("*/5 * * * *", async () => {
 
     for (const a of pendings) {
       const startTime = a.time || "9:00 AM";
+
       if (!a.endTime || a.endTime.trim() === "") {
         a.endTime = addMinutesToTimeStr(startTime, 60);
         await a.save();
@@ -83,14 +106,16 @@ cron.schedule("*/5 * * * *", async () => {
       if (endDateTime <= now) {
         a.status = "Completed";
         await a.save();
-        console.log(`Appointment ${a._id} marked as Completed`);
+        console.log(`[CRON] Appointment ${a._id} marked as Completed.`);
       }
     }
   } catch (err) {
-    console.error("Cron job error:", err);
+    console.error("[CRON] Status update error:", err);
   }
 });
 
-// --- Start server ---
+// ----------------------------------------------------------------------
+// 6️⃣ START SERVER
+// ----------------------------------------------------------------------
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
