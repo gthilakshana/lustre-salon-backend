@@ -1,7 +1,7 @@
 import Stripe from "stripe";
 import dotenv from "dotenv";
 import Appointment from "../models/appointment.js";
-import TempCart from "../models/tempCart.js"; 
+import TempCart from "../models/tempCart.js"; // Import the model
 
 import { addMinutesToTimeStr } from "../utils/timeUtils.js";
 
@@ -10,7 +10,7 @@ dotenv.config();
 
 
 
-/
+
 if (!process.env.STRIPE_SECRET_KEY) {
     console.error("STRIPE_SECRET_KEY is missing in environment variables!");
     process.exit(1);
