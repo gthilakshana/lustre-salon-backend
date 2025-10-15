@@ -26,10 +26,15 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
 export const createCheckoutSession = async (req, res) => {
     const { cartItems, paymentOption } = req.body;
     
-   
+
+    if (!req.user || !req.user._id)
+        return res.status(401).json({ message: "Unauthorized" });
+
+    if (!cartItems?.length)
+        return res.status(400).json({ message: "No items in cart" });
     
     try {
-       
+        
         const tempCart = await TempCart.create({
             cartItems,
             paymentOption,
@@ -37,10 +42,10 @@ export const createCheckoutSession = async (req, res) => {
         });
 
         const line_items = cartItems.map(item => {
-       
+        
             let usdAmount = Number(item.fullPayment); 
 
-           
+          
             if (isNaN(usdAmount) || usdAmount < 0.50) {
               
                 throw new Error(`Minimum transaction amount of 0.50 USD not met. The price sent was $${usdAmount.toFixed(2)} USD.`);
@@ -62,17 +67,31 @@ export const createCheckoutSession = async (req, res) => {
             };
         });
 
-      
+        
         const session = await stripe.checkout.sessions.create({
+            payment_method_types: ["card"], 
+            mode: "payment",                
+            line_items,                     
+            
+          
+            success_url: `${process.env.FRONTEND_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${process.env.FRONTEND_URL}/dateAndTimeSelect`,
+            
            
+            metadata: {
+                tempCartId: tempCart._id.toString(),
+                paymentOption: paymentOption, 
+                userId: req.user._id.toString(), 
+            },
         });
 
         res.status(200).json({ id: session.id });
     } catch (err) {
+       
         console.error("Stripe session creation error:", err);
         const message = err.message || err.raw?.message || "Failed to create Stripe session";
         
-        const status = message.includes("Minimum transaction amount") ? 400 : 500;
+        const status = message.includes("Minimum transaction amount") || message.includes("success_url") ? 400 : 500;
         res.status(status).json({ message });
     }
 };
