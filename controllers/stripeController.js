@@ -79,8 +79,7 @@ export const createCheckoutSession = async (req, res) => {
   },
                   
             
-    success_url: `${process.env.FRONTEND_URL}/success?session_id={CHECKOUT_SESSION_ID}&currency=usd`,
-
+            success_url: `${process.env.FRONTEND_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
             cancel_url: `${process.env.FRONTEND_URL}/dateAndTimeSelect`,
             
             metadata: {
