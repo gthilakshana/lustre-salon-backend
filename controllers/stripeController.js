@@ -7,10 +7,6 @@ import { addMinutesToTimeStr } from "../utils/timeUtils.js";
 
 dotenv.config();
 
-
-
-
-
 if (!process.env.STRIPE_SECRET_KEY) {
     console.error("STRIPE_SECRET_KEY is missing in environment variables!");
     process.exit(1);
@@ -21,12 +17,11 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
 }); 
 
 // ──────────────────────────────────────────────────────────────────────────────
-// createCheckoutSession (Correct, uses TempCart to store data)
+// createCheckoutSession - (Currency/Pricing logic is checked here)
 // ──────────────────────────────────────────────────────────────────────────────
 export const createCheckoutSession = async (req, res) => {
     const { cartItems, paymentOption } = req.body;
     
-
     if (!req.user || !req.user._id)
         return res.status(401).json({ message: "Unauthorized" });
 
@@ -45,13 +40,12 @@ export const createCheckoutSession = async (req, res) => {
         
             let usdAmount = Number(item.fullPayment); 
 
-          
+   
             if (isNaN(usdAmount) || usdAmount < 0.50) {
-              
-                throw new Error(`Minimum transaction amount of 0.50 USD not met. The price sent was $${usdAmount.toFixed(2)} USD.`);
+             
+                throw new Error(`Minimum transaction amount of 0.50 USD not met. The price sent was $${usdAmount.toFixed(2)} USD. Please check your currency conversion.`);
             }
             
-          
             const unit_amount = Math.round(usdAmount * 100); 
 
             return {
@@ -67,17 +61,14 @@ export const createCheckoutSession = async (req, res) => {
             };
         });
 
-        
         const session = await stripe.checkout.sessions.create({
             payment_method_types: ["card"], 
             mode: "payment",                
-            line_items,                     
+            line_items,                      
             
-          
             success_url: `${process.env.FRONTEND_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
             cancel_url: `${process.env.FRONTEND_URL}/dateAndTimeSelect`,
             
-           
             metadata: {
                 tempCartId: tempCart._id.toString(),
                 paymentOption: paymentOption, 
@@ -87,7 +78,7 @@ export const createCheckoutSession = async (req, res) => {
 
         res.status(200).json({ id: session.id });
     } catch (err) {
-       
+        
         console.error("Stripe session creation error:", err);
         const message = err.message || err.raw?.message || "Failed to create Stripe session";
         
@@ -97,11 +88,8 @@ export const createCheckoutSession = async (req, res) => {
 };
 
 // ──────────────────────────────────────────────────────────────────────────────
-// confirmPayment (Updated to use TempCart ID)
+// confirmPayment (Validated and robust)
 // ──────────────────────────────────────────────────────────────────────────────
-
-
-
 export async function confirmPayment(req, res) {
     const { sessionId } = req.body;
     if (!sessionId) return res.status(400).json({ message: "No session ID provided" });
@@ -114,7 +102,6 @@ export async function confirmPayment(req, res) {
         if (!tempCartId) return res.status(400).json({ message: "Missing TempCart ID in session metadata." });
 
         const tempCart = await TempCart.findById(tempCartId);
-       
         if (!tempCart || !tempCart.cartItems?.length) return res.status(404).json({ message: "TempCart data not found or already processed." });
 
         const cartItems = tempCart.cartItems;
@@ -124,19 +111,20 @@ export async function confirmPayment(req, res) {
             const createdAppointments = [];
             
             for (const item of cartItems) {
-               
-                if (!item.serviceName || !item.date || !item.time || !item.type || !item.stylistName) {
-                    console.warn(`Skipping cart item (ID: ${item.id}) due to missing required data.`);
+                
+       
+                if (!item.serviceName || !item.date || !item.time || !item.type || !item.stylistName || item.subName === undefined) {
+                    console.warn(`Skipping cart item due to missing required data: ${JSON.stringify(item)}`);
                     continue; 
                 }
                 
                 const appointmentDate = new Date(item.date);
                 if (isNaN(appointmentDate)) {
-                    console.warn(`Skipping cart item (ID: ${item.id}) due to invalid date format.`);
+                    console.warn(`Skipping cart item due to invalid date format: ${item.date}`);
                     continue; 
                 }
 
-              
+             
                 const exists = await Appointment.findOne({
                     user: tempCart.userId,
                     serviceName: item.serviceName,
@@ -145,14 +133,13 @@ export async function confirmPayment(req, res) {
                 });
                 if (exists) continue;
 
-                
                 const originalTotal = Number(item.price || 0);
                 const amountPaidNow = Number(item.fullPayment || 0); 
                 const finalDuePayment = originalTotal - amountPaidNow;
 
                 
                 const appt = await Appointment.create({
-                   
+                
                     stylistName: item.stylistName,
                     serviceName: item.serviceName,
                     subName: item.subName,
@@ -161,7 +148,7 @@ export async function confirmPayment(req, res) {
                     type: item.type, 
                     endTime: item.endTime || addMinutesToTimeStr(item.time, 60), 
 
-                   
+                
                     user: tempCart.userId, 
                     paymentType: isHalfPayment ? "Half" : "Full", 
                     fullPayment: amountPaidNow, 
@@ -170,7 +157,6 @@ export async function confirmPayment(req, res) {
                 });
                 createdAppointments.push(appt);
             }
-          
           
             await TempCart.findByIdAndDelete(tempCartId);
 
@@ -181,23 +167,24 @@ export async function confirmPayment(req, res) {
         }
         res.status(400).json({ message: "Payment not completed" });
     } catch (err) {
-     
         console.error("confirmPayment fatal error:", err); 
         res.status(500).json({ message: "Failed to confirm payment due to a server error." });
     }
 }
+
 // ──────────────────────────────────────────────────────────────────────────────
-// stripeWebhookHandler (Updated to use TempCart ID)
+// stripeWebhookHandler (FIXED and robust)
 // ──────────────────────────────────────────────────────────────────────────────
 export const stripeWebhookHandler = async (req, res) => {
     let event;
 
     try {
         const sig = req.headers["stripe-signature"];
-        // Ensure STRIPE_WEBHOOK_SECRET is set correctly on Render
+     
         event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
     } catch (err) {
         console.error("Webhook signature failed:", err.message);
+       
         return res.status(400).send(`Webhook Error: ${err.message}`);
     }
 
@@ -213,12 +200,11 @@ export const stripeWebhookHandler = async (req, res) => {
                     return res.status(400).send("Metadata missing tempCartId");
                 }
                 
-               
                 const tempCart = await TempCart.findById(tempCartId);
 
                 if (!tempCart || !tempCart.cartItems?.length) {
+            
                     console.error("TempCart record not found or empty for ID:", tempCartId);
-                  
                     return res.status(200).send("TempCart record already processed or expired.");
                 }
 
@@ -226,41 +212,53 @@ export const stripeWebhookHandler = async (req, res) => {
                 const isHalfPayment = paymentOption === "half";
                 const createdAppointments = [];
 
-              
                 for (const item of cartItems) {
-                   
+                    
+                 
+                    if (!item.serviceName || !item.date || !item.time || !item.type || !item.stylistName || item.subName === undefined) {
+                        console.warn(`Webhook: Skipping cart item due to missing required data: ${JSON.stringify(item)}`);
+                        continue; 
+                    }
+                    
+                    const appointmentDate = new Date(item.date);
+                    if (isNaN(appointmentDate)) {
+                        console.warn(`Webhook: Skipping cart item due to invalid date format: ${item.date}`);
+                        continue; 
+                    }
+                    
                     const exists = await Appointment.findOne({
                         user: tempCart.userId, 
                         serviceName: item.serviceName,
-                        date: new Date(item.date),
+                        date: appointmentDate, 
                         time: item.time
                     });
 
                     if (exists) continue; 
 
-                   
                     const originalTotal = Number(item.price || 0);
                     const amountPaidNow = Number(item.fullPayment || 0); 
                     const finalDuePayment = originalTotal - amountPaidNow;
 
                     await Appointment.create({
+                     
                         stylistName: item.stylistName,
                         serviceName: item.serviceName,
                         subName: item.subName,
-                        date: new Date(item.date),
+                        date: appointmentDate, 
                         time: item.time,
                         endTime: item.endTime || addMinutesToTimeStr(item.time, 60),
-                        type: item.type,
+                        type: item.type, 
+                        
                         paymentType: isHalfPayment ? "Half" : "Full", 
                         fullPayment: amountPaidNow, 
                         duePayment: finalDuePayment < 0 ? 0 : finalDuePayment, 
                         user: tempCart.userId, 
                         status: "Completed" 
                     });
-                    createdAppointments.push(appt);
+                    createdAppointments.push(item); 
                 }
                 
-                
+               
                 await TempCart.findByIdAndDelete(tempCartId);
 
                 console.log(`${createdAppointments.length} Appointments saved successfully from webhook for session: ${session.id}`);
@@ -272,6 +270,5 @@ export const stripeWebhookHandler = async (req, res) => {
         }
     }
 
-   
     res.status(200).send("Webhook received successfully.");
 };
