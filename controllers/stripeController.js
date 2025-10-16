@@ -113,10 +113,10 @@ export async function confirmPayment(req, res) {
             for (const item of cartItems) {
                 
        
-                if (!item.serviceName || !item.date || !item.time || !item.type || !item.stylistName || item.subName === undefined) {
-                    console.warn(`Skipping cart item due to missing required data: ${JSON.stringify(item)}`);
-                    continue; 
-                }
+               if (!item.serviceName || !item.date || !item.time || !item.type || !item.stylistName || item.subName === undefined) {
+        console.warn(`[CONFIRM_FAIL] Skipping item due to MISSING DATA. Service: ${item.serviceName}, Date: ${item.date}.`); 
+        continue; 
+    }
                 
                 const appointmentDate = new Date(item.date);
                 if (isNaN(appointmentDate)) {
