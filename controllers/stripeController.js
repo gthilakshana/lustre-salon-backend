@@ -62,15 +62,25 @@ export const createCheckoutSession = async (req, res) => {
         });
 
         const session = await stripe.checkout.sessions.create({
-            payment_method_types: ["card"],
-            mode: "payment",
-            line_items,
-            currency: "usd", 
-            locale: "en",   
-            allow_promotion_codes: false,
-            automatic_tax: { enabled: false },                    
+             payment_method_types: ["card"],
+  mode: "payment",
+  line_items,
+
+ 
+  currency: "usd",
+  automatic_tax: { enabled: false },
+  locale: "en",
+  allow_promotion_codes: false,
+ 
+  custom_text: {
+    shipping_address: {
+      message: "All payments are processed in USD only.",
+    },
+  },
+                  
             
-            success_url: `${process.env.FRONTEND_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
+    success_url: `${process.env.FRONTEND_URL}/success?session_id={CHECKOUT_SESSION_ID}&currency=usd`,
+
             cancel_url: `${process.env.FRONTEND_URL}/dateAndTimeSelect`,
             
             metadata: {
