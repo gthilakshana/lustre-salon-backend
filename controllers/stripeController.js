@@ -1,7 +1,7 @@
 import Stripe from "stripe";
 import dotenv from "dotenv";
 import Appointment from "../models/appointment.js";
-import TempCart from "../models/tempCart.js"; // Import the model
+import TempCart from "../models/tempCart.js"; 
 
 import { addMinutesToTimeStr } from "../utils/timeUtils.js";
 
@@ -99,12 +99,10 @@ export const createCheckoutSession = async (req, res) => {
 // ──────────────────────────────────────────────────────────────────────────────
 // confirmPayment (Updated to use TempCart ID)
 // ──────────────────────────────────────────────────────────────────────────────
-// stripeController.js
 
-// ... (other imports and setup)
+
 
 export async function confirmPayment(req, res) {
-
     const { sessionId } = req.body;
     if (!sessionId) return res.status(400).json({ message: "No session ID provided" });
 
@@ -116,6 +114,7 @@ export async function confirmPayment(req, res) {
         if (!tempCartId) return res.status(400).json({ message: "Missing TempCart ID in session metadata." });
 
         const tempCart = await TempCart.findById(tempCartId);
+       
         if (!tempCart || !tempCart.cartItems?.length) return res.status(404).json({ message: "TempCart data not found or already processed." });
 
         const cartItems = tempCart.cartItems;
@@ -125,9 +124,19 @@ export async function confirmPayment(req, res) {
             const createdAppointments = [];
             
             for (const item of cartItems) {
-                // 🛑 SAFETY CHECK: Use the validated date object
+               
+                if (!item.serviceName || !item.date || !item.time || !item.type || !item.stylistName) {
+                    console.warn(`Skipping cart item (ID: ${item.id}) due to missing required data.`);
+                    continue; 
+                }
+                
                 const appointmentDate = new Date(item.date);
+                if (isNaN(appointmentDate)) {
+                    console.warn(`Skipping cart item (ID: ${item.id}) due to invalid date format.`);
+                    continue; 
+                }
 
+              
                 const exists = await Appointment.findOne({
                     user: tempCart.userId,
                     serviceName: item.serviceName,
@@ -136,14 +145,14 @@ export async function confirmPayment(req, res) {
                 });
                 if (exists) continue;
 
-               
+                
                 const originalTotal = Number(item.price || 0);
                 const amountPaidNow = Number(item.fullPayment || 0); 
                 const finalDuePayment = originalTotal - amountPaidNow;
 
                 
                 const appt = await Appointment.create({
-                
+                   
                     stylistName: item.stylistName,
                     serviceName: item.serviceName,
                     subName: item.subName,
@@ -152,7 +161,7 @@ export async function confirmPayment(req, res) {
                     type: item.type, 
                     endTime: item.endTime || addMinutesToTimeStr(item.time, 60), 
 
-                 
+                   
                     user: tempCart.userId, 
                     paymentType: isHalfPayment ? "Half" : "Full", 
                     fullPayment: amountPaidNow, 
@@ -161,6 +170,7 @@ export async function confirmPayment(req, res) {
                 });
                 createdAppointments.push(appt);
             }
+          
           
             await TempCart.findByIdAndDelete(tempCartId);
 
