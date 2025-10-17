@@ -17,21 +17,21 @@ import { stripeWebhookHandler } from './controllers/stripeController.js';
 import Appointment from "./models/appointment.js";
 import Message from "./models/message.js";
 
-// Utils
+
 import { combineDateAndTime, addMinutesToTimeStr } from "./utils/timeUtils.js";
 
 dotenv.config();
 const app = express();
 
 // ----------------------------------------------------------------------
-// 1️⃣ STRIPE WEBHOOK ROUTE (MUST come before express.json())
+// STRIPE WEBHOOK ROUTE (MUST come before express.json())
 // ----------------------------------------------------------------------
-// 1️⃣ STRIPE WEBHOOK ROUTE (MUST come before express.json())
+
 app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), stripeWebhookHandler); 
 
 
 // ----------------------------------------------------------------------
-// 2️⃣ GENERAL MIDDLEWARE
+// GENERAL MIDDLEWARE
 // ----------------------------------------------------------------------
 app.use(cors());
 app.use(express.json());
@@ -52,7 +52,7 @@ app.use((req, res, next) => {
 });
 
 // ----------------------------------------------------------------------
-// 3️⃣ DATABASE CONNECTION
+// DATABASE CONNECTION
 // ----------------------------------------------------------------------
 mongoose
   .connect(process.env.MONGO_URI)
@@ -63,7 +63,7 @@ mongoose
   });
 
 // ----------------------------------------------------------------------
-// 4️⃣ API ROUTES
+// API ROUTES
 // ----------------------------------------------------------------------
 app.get("/", (req, res) => res.send("Lustre Salon API is running"));
 
@@ -76,7 +76,7 @@ app.use("/api/services", serviceRouter);
 app.use("/api/stripe", stripeRouter);
 
 // ----------------------------------------------------------------------
-// 5️⃣ CRON JOBS
+//  CRON JOBS
 // ----------------------------------------------------------------------
 cron.schedule("0 0 * * *", async () => {
   try {
@@ -115,7 +115,7 @@ cron.schedule("*/5 * * * *", async () => {
 });
 
 // ----------------------------------------------------------------------
-// 6️⃣ START SERVER
+// 6START SERVER
 // ----------------------------------------------------------------------
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
