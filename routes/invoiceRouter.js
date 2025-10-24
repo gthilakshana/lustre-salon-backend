@@ -7,10 +7,6 @@ import dayjs from "dayjs";
 
 const router = express.Router();
 
-/**
- * POST /api/invoices/generate
- * Body: { appointmentGroup: [...], customer: {...}, company?: {...} }
- */
 router.post("/generate", async (req, res) => {
   try {
     const { appointmentGroup = [], customer = {}, company = {} } = req.body;
@@ -70,13 +66,18 @@ router.post("/generate", async (req, res) => {
     doc.text(customer.email || "customer@email.com", boxX + 12, currentY + 56);
 
     const metaX = boxX + boxWidth / 2 + 12;
+    const firstAppointment = appointmentGroup[0] || {};
+    const rawDate = firstAppointment.rawDate || firstAppointment.date || null;
+    const appointmentTime = firstAppointment.time || "-";
+
     doc.font("Helvetica-Bold").fillColor("#222").text("Invoice Date:", metaX, currentY + 12);
     doc.font("Helvetica").fillColor("#555").text(dayjs().format("DD MMM YYYY"), metaX + 85, currentY + 12);
-    const rawDate = appointmentGroup[0]?.rawDate || appointmentGroup[0]?.date;
+
     doc.font("Helvetica-Bold").fillColor("#222").text("Appointment Date:", metaX, currentY + 30);
     doc.font("Helvetica").fillColor("#555").text(rawDate ? dayjs(rawDate).format("DD MMM YYYY") : "-", metaX + 110, currentY + 30);
+
     doc.font("Helvetica-Bold").fillColor("#222").text("Time:", metaX, currentY + 48);
-    doc.font("Helvetica").fillColor("#555").text(appointmentGroup[0]?.time || "-", metaX + 30, currentY + 48);
+    doc.font("Helvetica").fillColor("#555").text(appointmentTime, metaX + 30, currentY + 48);
 
     currentY += boxHeight + 18;
 
@@ -89,7 +90,8 @@ router.post("/generate", async (req, res) => {
     doc.text("Total", tableX + 420, currentY, { width: 80, align: "right" });
 
     currentY += 14;
-    doc.setLineWidth(0.5).strokeColor("#e8e8e8").moveTo(tableX, currentY).lineTo(pageWidth - boxX, currentY).stroke();
+    // Fix: use lineWidth instead of setLineWidth
+    doc.lineWidth(0.5).strokeColor("#e8e8e8").moveTo(tableX, currentY).lineTo(pageWidth - boxX, currentY).stroke();
     currentY += 8;
 
     doc.font("Helvetica").fontSize(9).fillColor("#444");
@@ -100,7 +102,7 @@ router.post("/generate", async (req, res) => {
       doc.text(apt.service || "-", tableX + 36, y, { width: 200 });
       doc.text(apt.stylist || "-", tableX + 260, y, { width: 90 });
       doc.text(apt.time || "-", tableX + 360, y);
-      const cost = Number(apt.cost || apt.price || 0);
+      const cost = Number(apt.cost ?? apt.price ?? 0) || 0;
       subtotal += cost;
       doc.text(`$${cost.toFixed(2)}`, tableX + 420, y, { width: 80, align: "right" });
     });
