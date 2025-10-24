@@ -76,11 +76,17 @@ app.use("/api/services", serviceRouter);
 // Stripe routes (excluding webhook, already defined above)
 app.use("/api/stripe", stripeRouter);
 
-// Add after your other routes
+
 app.use("/api/invoices", invoiceRouter);
 
-// Make sure /public folder exists with LUSTRE.jpg logo
+
 app.use(express.static("public"));
+
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ success: false, message: "Internal Server Error" });
+});
+
 
 // ----------------------------------------------------------------------
 //  CRON JOBS
