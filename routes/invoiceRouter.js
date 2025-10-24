@@ -12,20 +12,18 @@ router.post("/generate", async (req, res) => {
         if (!appointmentGroup.length) return res.status(400).send("No appointments");
 
         const firstAppointment = appointmentGroup[0];
-        // ------------------------------------------------------------------
         // Calculation logic - Keep as is
         const totalCost = appointmentGroup.reduce((acc, a) => acc + Number(a.cost || 0), 0);
         const totalPaid = appointmentGroup.reduce((acc, a) => acc + Number(a.paid || 0), 0);
-        const totalDue = totalCost - totalPaid; // Recalculate total due for accuracy
+        const totalDue = totalCost - totalPaid;
 
-        // Colors (Updated for a more corporate/professional feel)
-        const BLACK = "#000000", WHITE = "#ffffff", GOLD = "#a87f2e", // Updated GOLD for better contrast
+        // Colors
+        const BLACK = "#000000", WHITE = "#ffffff", GOLD = "#a87f2e", 
               LIGHT_GRAY = "#f7f7f7", BORDER_GRAY = "#e4e4e4";
         const DARK_TEXT = "#333333", MUTED_TEXT = "#666666", RED = "#cc3333", GREEN = "#007700";
 
         // Helper function
         const formatUSD = (amount) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount || 0);
-        // ------------------------------------------------------------------
 
         const doc = new PDFDocument({ size: "A4", margin: 36 });
         const chunks = [];
@@ -39,32 +37,27 @@ router.post("/generate", async (req, res) => {
 
         const pageWidth = doc.page.width;
         const pageHeight = doc.page.height;
-        let currentY = 36; // Start below the top margin
+        let currentY = 36;
 
         // ##################################################################
-        // 1. HEADER - More Professional Look
+        // 1. HEADER (Unchanged from last version)
         // ##################################################################
 
-        // Salon Name (Logo Placeholder)
         doc.fillColor(DARK_TEXT).fontSize(28).font("Helvetica-Bold").text("LUSTRE SALON", 36, currentY);
-        
-        // INVOICE Title
         doc.fillColor(GOLD).fontSize(10).font("Helvetica-Bold").text("INVOICE", pageWidth - 100, currentY, { align: "right" });
         currentY += 15;
         doc.fillColor(DARK_TEXT).fontSize(18).font("Helvetica-Bold").text(dayjs().format("YYYY-MM-DD"), pageWidth - 100, currentY, { align: "right" });
         currentY += 25;
-
-        // Separator Line
         doc.strokeColor(BORDER_GRAY).lineWidth(1).moveTo(36, currentY).lineTo(pageWidth - 36, currentY).stroke();
         currentY += 20;
 
         // ##################################################################
-        // 2. CUSTOMER + APPOINTMENT BOXES
+        // 2. CUSTOMER + APPOINTMENT BOXES (Unchanged from last version)
         // ##################################################################
 
         const detailsBoxX = 36;
         const detailsBoxWidth = (pageWidth - 72) / 2 - 5;
-        const detailsBoxHeight = 75; // Adjusted height for more space
+        const detailsBoxHeight = 75;
         const detailsBoxGap = 10;
         
         // BILL TO BOX
@@ -87,13 +80,14 @@ router.post("/generate", async (req, res) => {
         currentY += detailsBoxHeight + 30;
 
         // ##################################################################
-        // 3. SERVICES TABLE
+        // 3. SERVICES TABLE - FIXING COLUMN ALIGNMENT 🎯
         // ##################################################################
 
         const tableTop = currentY;
         const tableWidth = pageWidth - 72;
-        // Adjusted column widths and counts for a better fit and professional look
-        const colWidths = [30, 150, 120, 80, 50, 60, 60]; // Removed 'Due' from main table, added to summary
+        // Adjusted colWidths to accommodate all columns clearly (especially Time, Total, Paid)
+        // [#, Service, Sub Name, Stylist, Time, Total, Paid]
+        const colWidths = [20, 110, 100, 80, 50, 80, 80]; 
         const colHeaders = ["#", "Service", "Sub Name", "Stylist", "Time", "Total", "Paid"];
         const rowHeight = 25;
         let x = 36;
@@ -104,9 +98,14 @@ router.post("/generate", async (req, res) => {
         // HEADER ROW TEXT
         doc.font("Helvetica-Bold").fillColor(WHITE).fontSize(9);
         colHeaders.forEach((h, i) => {
+            // Align Total and Paid to the right
             const align = ["Total", "Paid"].includes(h) ? "right" : "left";
-            const currentX = x + (i > 0 ? colWidths.slice(0, i).reduce((a, b) => a + b, 0) : 0);
-            doc.text(h, currentX + 5, tableTop + 8, { width: colWidths[i], align: align });
+            const currentX = x + colWidths.slice(0, i).reduce((a, b) => a + b, 0);
+            
+            // Adding a buffer of 5px for left-aligned, and offsetting by -5px for right-aligned
+            const textX = align === "right" ? currentX + colWidths[i] - 5 : currentX + 5;
+            
+            doc.text(h, textX, tableTop + 8, { width: colWidths[i] - 10, align: align });
         });
         currentY += rowHeight;
 
@@ -115,10 +114,11 @@ router.post("/generate", async (req, res) => {
             x = 36;
             const bgColor = idx % 2 === 0 ? WHITE : LIGHT_GRAY;
             
-            // Row background
+            // Row background and border
             doc.rect(x, currentY, tableWidth, rowHeight).fill(bgColor);
-            doc.strokeColor(BORDER_GRAY).lineWidth(0.5).rect(x, currentY, tableWidth, rowHeight).stroke(); // Row line
+            doc.strokeColor(BORDER_GRAY).lineWidth(0.5).rect(x, currentY, tableWidth, rowHeight).stroke(); 
 
+            // The row data must now match the column headers exactly
             const row = [
                 idx + 1,
                 apt.service || "-",
@@ -130,27 +130,26 @@ router.post("/generate", async (req, res) => {
             ];
             
             doc.fillColor(DARK_TEXT).font("Helvetica").fontSize(8);
-            row.slice(0, colHeaders.length).forEach((cell, i) => { // Only loop up to colHeaders length
+            row.forEach((cell, i) => { 
                 const align = ["Total", "Paid"].includes(colHeaders[i]) ? "right" : "left";
-                const currentX = x + (i > 0 ? colWidths.slice(0, i).reduce((a, b) => a + b, 0) : 0);
+                const currentX = x + colWidths.slice(0, i).reduce((a, b) => a + b, 0);
                 
-                doc.text(cell, currentX + 5, currentY + 8, { width: colWidths[i], align: align });
+                const textX = align === "right" ? currentX + colWidths[i] - 5 : currentX + 5;
+                
+                doc.text(cell, textX, currentY + 8, { width: colWidths[i] - 10, align: align });
             });
             
             currentY += rowHeight;
-
-            // Page break logic removed to try and fit everything on one page for typical invoices
-            // If the services list is very long, it will naturally flow to the next page.
         });
 
         currentY += 20;
 
         // ##################################################################
-        // 4. PAYMENT SUMMARY (Right-aligned and Clean)
+        // 4. PAYMENT SUMMARY (Unchanged from last version)
         // ##################################################################
 
         const summaryBoxWidth = 250;
-        const summaryBoxX = pageWidth - 36 - summaryBoxWidth; // Align to the right
+        const summaryBoxX = pageWidth - 36 - summaryBoxWidth; 
 
         // Border and Title
         doc.roundedRect(summaryBoxX, currentY, summaryBoxWidth, 90, 6).stroke(BORDER_GRAY).fill(WHITE);
@@ -168,28 +167,27 @@ router.post("/generate", async (req, res) => {
         // Amount Paid
         doc.font("Helvetica").fontSize(10).fillColor(GREEN).text("Amount Paid:", labelX, summaryY);
         doc.text(formatUSD(totalPaid), amountX, summaryY, { width: 80, align: "right" });
-        summaryY += 25; // Extra space before Due
+        summaryY += 25; 
 
         // Amount Due (Highlighted)
-        doc.rect(summaryBoxX, summaryY, summaryBoxWidth, 20).fill(RED); // Red background for Due amount
+        doc.rect(summaryBoxX, summaryY, summaryBoxWidth, 20).fill(RED); 
         doc.font("Helvetica-Bold").fontSize(11).fillColor(WHITE).text("Amount Due:", labelX, summaryY + 5);
         doc.text(formatUSD(totalDue), amountX, summaryY + 5, { width: 80, align: "right" });
         
         currentY = summaryY + 40;
 
         // ##################################################################
-        // 5. MESSAGE / NOTES
+        // 5. MESSAGE / NOTES (Unchanged from last version)
         // ##################################################################
 
-        // Align message under the BILL TO section if possible
-        const messageY = Math.max(currentY, detailsBoxX + detailsBoxHeight + 50); // Ensure it's below the boxes
+        const messageY = Math.max(currentY, detailsBoxX + detailsBoxHeight + 50); 
         
         doc.roundedRect(36, messageY, pageWidth-72, 40, 6).fill(LIGHT_GRAY).stroke(BORDER_GRAY);
         doc.fillColor(MUTED_TEXT).font("Helvetica-Oblique").fontSize(8)
             .text("Please arrive 10 minutes before your scheduled appointment time. Selecting multiple services increases total duration.", 50, messageY + 10, { width: pageWidth-100 });
 
         // ##################################################################
-        // 6. FOOTER (Fixed to the bottom of the page)
+        // 6. FOOTER (Fixed to the bottom of the page - Unchanged from last version)
         // ##################################################################
 
         const footerY = pageHeight - 50;
