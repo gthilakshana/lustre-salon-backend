@@ -24,129 +24,109 @@ router.post("/generate", async (req, res) => {
 
     const formatUSD = (amount) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount || 0);
 
-    const doc = new PDFDocument({ size: "A4", margin: 20 });
-    const chunks = [];
-    doc.on("data", (chunk) => chunks.push(chunk));
-    doc.on("end", () => {
-      const pdfBuffer = Buffer.concat(chunks);
-      res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename=invoice_${Date.now()}.pdf`);
-      res.send(pdfBuffer);
-    });
+  
 
-    const pageWidth = doc.page.width;
+const doc = new PDFDocument({ size: "A4", margin: 36 });
+const chunks = [];
+doc.on("data", (chunk) => chunks.push(chunk));
+doc.on("end", () => {
+  const pdfBuffer = Buffer.concat(chunks);
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename=invoice_${Date.now()}.pdf`);
+  res.send(pdfBuffer);
+});
 
-    // --- HEADER ---
-    doc.rect(0, 0, pageWidth, 40).fill(BLACK);
-    const logoPath = path.join(process.cwd(), "public", "LUSTRE.jpg");
-    if (fs.existsSync(logoPath)) doc.image(logoPath, 15, 8, { width: 30, height: 28 });
+const pageWidth = doc.page.width;
+const pageHeight = doc.page.height;
 
-    doc.fillColor(WHITE).font("Helvetica-Bold").fontSize(18).text("LUSTRE SALON", pageWidth - 15, 15, { align: "right" });
-    doc.font("Helvetica").fontSize(9).fillColor("#e6e6e6").text("Your Premium Grooming Partner", pageWidth - 15, 22, { align: "right" });
-    doc.font("Helvetica-Bold").fontSize(20).fillColor(GOLD).text("INVOICE", pageWidth - 15, 30, { align: "right" });
+// HEADER
+doc.rect(0, 0, pageWidth, 50).fill("#000");
+doc.fillColor("#fff").fontSize(20).font("Helvetica-Bold").text("LUSTRE SALON", 50, 15);
+doc.fillColor("#d4af37").fontSize(22).text("INVOICE", pageWidth - 150, 15);
 
-    let currentY = 52;
+// CUSTOMER + APPOINTMENT BOX
+let currentY = 60;
+const boxHeight = 60;
+doc.roundedRect(36, currentY, pageWidth - 72, boxHeight, 6).fill("#f7f7f7").stroke("#e8e8e8");
+doc.fillColor("#222").fontSize(10).font("Helvetica-Bold").text("BILL TO", 50, currentY + 10);
+doc.font("Helvetica").fontSize(9).fillColor("#555")
+   .text(`Name: ${customer.name || "Valued Customer"}`, 50, currentY + 25)
+   .text(`Mobile: ${customer.mobileNumber || "(555) 555-5555"}`, 50, currentY + 40)
+   .text(`Email: ${customer.email || "customer@email.com"}`, 50, currentY + 55);
 
-    // --- CUSTOMER + APPOINTMENT BOX ---
-    const boxWidth = pageWidth * 0.85;
-    const boxX = (pageWidth - boxWidth) / 2;
-    const boxHeight = 35;
-    doc.roundedRect(boxX, currentY, boxWidth, boxHeight, 4).fill(LIGHT_GRAY);
+doc.font("Helvetica-Bold").fillColor("#222").text("APPOINTMENT DETAILS", pageWidth/2, currentY + 10);
+doc.font("Helvetica").fontSize(9).fillColor("#555")
+   .text(`Invoice Date: ${dayjs().format("DD MMM YYYY")}`, pageWidth/2, currentY + 25)
+   .text(`Appointment Date: ${dayjs(firstAppointment.rawDate).format("DD MMM YYYY")}`, pageWidth/2, currentY + 40)
+   .text(`Time: ${firstAppointment.time}`, pageWidth/2, currentY + 55);
 
-    doc.fillColor(DARK_TEXT).font("Helvetica-Bold").fontSize(10);
-    doc.text("BILL TO", boxX + 10, currentY + 6);
-    doc.text("APPOINTMENT DETAILS", boxX + boxWidth / 2 + 10, currentY + 6);
+currentY += boxHeight + 20;
 
-    doc.fillColor(MUTED_TEXT).font("Helvetica").fontSize(9);
-    doc.text(`Name: ${customer.name || "Valued Customer"}`, boxX + 10, currentY + 13);
-    doc.text(`Mobile: ${customer.mobileNumber || "(555) 555-5555"}`, boxX + 10, currentY + 19);
-    doc.text(`Email: ${customer.email || "customer@email.com"}`, boxX + 10, currentY + 25);
+// SERVICES TABLE
+const tableTop = currentY;
+const colWidths = [20, 120, 120, 80, 50, 60, 60, 60];
+const rowHeight = 20;
 
-    doc.text(`Invoice Date: ${dayjs().format("DD MMM YYYY")}`, boxX + boxWidth / 2 + 10, currentY + 13);
-    doc.text(`Appointment Date: ${dayjs(rawDate).format("DD MMM YYYY")}`, boxX + boxWidth / 2 + 10, currentY + 19);
-    doc.text(`Time: ${time}`, boxX + boxWidth / 2 + 10, currentY + 25);
+// HEADER ROW
+doc.font("Helvetica-Bold").fillColor("#222");
+let x = 36;
+["#", "Service", "Sub Name", "Stylist", "Time", "Total", "Paid", "Due"].forEach((h, i) => {
+  doc.text(h, x + 2, currentY, { width: colWidths[i], align: i>4 ? "right" : "left" });
+  x += colWidths[i];
+});
+currentY += rowHeight;
 
-    currentY += boxHeight + 10;
+// TABLE ROWS
+appointmentGroup.forEach((apt, idx) => {
+  x = 36;
+  const bgColor = idx % 2 === 0 ? "#fff" : "#f2f2f2";
+  doc.rect(x, currentY, colWidths.reduce((a,b)=>a+b,0), rowHeight).fill(bgColor).stroke();
+  
+  const row = [
+    idx + 1,
+    apt.service || "-",
+    apt.subName || "-",
+    apt.stylist || "-",
+    apt.time || "-",
+    formatUSD(apt.cost),
+    formatUSD(apt.paid),
+    formatUSD(apt.due)
+  ];
+  row.forEach((cell, i) => {
+    doc.fillColor("#222").font("Helvetica").text(cell, x + 2, currentY + 5, { width: colWidths[i], align: i>4 ? "right" : "left" });
+    x += colWidths[i];
+  });
+  currentY += rowHeight;
 
-    // --- SERVICES TABLE ---
-    doc.fillColor(DARK_TEXT).font("Helvetica-Bold").fontSize(9);
-    const tableX = boxX;
-    const colWidths = [20, 80, 60, 60, 40, 50, 50, 50];
-    const headers = ["#", "Services", "Sub Names", "Stylist", "Time", "Total", "Paid", "Due"];
+  // Add page break if exceeds
+  if(currentY > pageHeight - 150){
+    doc.addPage();
+    currentY = 50;
+  }
+});
 
-    let x = tableX;
-    headers.forEach((h, i) => {
-      doc.text(h, x, currentY, { width: colWidths[i], align: "center" });
-      x += colWidths[i];
-    });
-    currentY += 12;
-    doc.moveTo(tableX, currentY).lineTo(tableX + colWidths.reduce((a, b) => a + b, 0), currentY).strokeColor(DARK_GRAY).stroke();
+// PAYMENT SUMMARY
+currentY += 10;
+doc.roundedRect(36, currentY, pageWidth-72, 60, 6).fill("#fff").stroke("#e8e8e8");
+doc.font("Helvetica-Bold").fillColor("#222").text("Payment Summary", 50, currentY + 10);
+doc.font("Helvetica").fontSize(9).fillColor("#222")
+   .text(`Total Cost: ${formatUSD(totalCost)}`, 50, currentY + 25)
+   .fillColor(GREEN).text(`Amount Paid: ${formatUSD(totalPaid)}`, 50, currentY + 40)
+   .fillColor(RED).text(`Amount Due: ${formatUSD(totalDue)}`, 200, currentY + 40);
 
-    doc.font("Helvetica").fontSize(8);
-    appointmentGroup.forEach((apt, idx) => {
-      let x = tableX;
-      const row = [
-        idx + 1,
-        apt.service || "-",
-        apt.subName || "-",
-        apt.stylist || "-",
-        apt.time || "-",
-        formatUSD(apt.cost),
-        formatUSD(apt.paid),
-        formatUSD(apt.due),
-      ];
-      row.forEach((cell, i) => {
-        doc.text(cell, x, currentY + 4, { width: colWidths[i], align: ["center","left","left","left","center","right","right","right"][i] });
-        x += colWidths[i];
-      });
-      currentY += 12;
-    });
+currentY += 80;
 
-    currentY += 20;
+// MESSAGE
+doc.roundedRect(36, currentY, pageWidth-72, 40, 6).fill("#fff8f0");
+doc.fillColor("#555").font("Helvetica-Oblique").fontSize(8)
+   .text("Please arrive 10 minutes before your scheduled appointment time. Selecting multiple services increases total duration.", 50, currentY + 10, { width: pageWidth-100 });
 
-    // --- PAYMENT SUMMARY BOX ---
-    const sumBoxW = boxWidth;
-    const sumBoxH = 48;
-    doc.roundedRect(boxX, currentY, sumBoxW, sumBoxH, 3).fill(WHITE);
+// FOOTER
+doc.fontSize(8).fillColor("#777").text("123 Main Street, New York, NY 10001 | info@lustresalon.com | Hotline: (800) 555-0199", 36, pageHeight-50, { width: pageWidth-72, align: "center" });
+doc.font("Helvetica-Bold").fillColor("#d4af37").text("Thank you for choosing LUSTRE SALON!", 36, pageHeight-35, { width: pageWidth-72, align: "center" });
 
-    let y = currentY + 12;
-    const innerPad = 10;
-    doc.fillColor(DARK_TEXT).font("Helvetica-Bold").text("Payment Summary", boxX + innerPad, y - 2);
-    doc.moveTo(boxX + innerPad, y + 2).lineTo(boxX + sumBoxW - innerPad, y + 2).stroke(DARK_GRAY);
+doc.end();
 
-    y += 12;
-    doc.fillColor(MUTED_TEXT).font("Helvetica").text("Total Cost", boxX + innerPad, y);
-    doc.font("Helvetica-Bold").text(formatUSD(totalCost), boxX + sumBoxW - innerPad, y, { align: "right" });
-
-    y += 10;
-    doc.fillColor(GREEN).font("Helvetica").text("Amount Paid", boxX + innerPad, y);
-    doc.font("Helvetica-Bold").text(formatUSD(totalPaid), boxX + sumBoxW - innerPad, y, { align: "right" });
-
-    y += 10;
-    doc.fillColor(RED).font("Helvetica").text("Amount Due", boxX + innerPad, y);
-    doc.font("Helvetica-Bold").text(formatUSD(totalDue), boxX + sumBoxW - innerPad, y, { align: "right" });
-
-    currentY += sumBoxH + 10;
-
-    // --- MESSAGE ---
-    const msgBoxH = 22;
-    doc.roundedRect(boxX, currentY, boxWidth, msgBoxH, 3).fill("#fffaf0");
-    doc.fillColor(MUTED_TEXT).font("Helvetica-Oblique").fontSize(8);
-    const msg = "Please arrive 10 minutes before your scheduled appointment time. Selecting multiple services increases total duration.";
-    doc.text(msg, boxX + 10, currentY + 6, { width: boxWidth - 20, align: "center" });
-
-    currentY += msgBoxH + 10;
-
-    // --- FOOTER ---
-    const footerHeight = 32;
-    const footerY = doc.page.height - footerHeight;
-    doc.rect(0, footerY, pageWidth, footerHeight).fill(LIGHT_GRAY);
-    doc.fillColor(BLACK).font("Helvetica").fontSize(7);
-    doc.text("123 Main Street, New York, NY 10001 | info@lustresalon.com | www.lustresalon.com", pageWidth/2, footerY+10, { align: "center" });
-    doc.text("Hotline: (800) 555-0199", pageWidth/2, footerY+17, { align: "center" });
-    doc.fillColor(GOLD).font("Helvetica-Bold").fontSize(8).text("Thank you for choosing LUSTRE SALON!", pageWidth/2, footerY+26, { align: "center" });
-
-    doc.end();
 
   } catch (err) {
     console.error("Invoice generation error:", err);
