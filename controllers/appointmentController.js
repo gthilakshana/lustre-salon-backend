@@ -7,7 +7,7 @@ import TempCart from "../models/tempCart.js";
 import User from "../models/user.js";
 
 
-import { combineDateAndTime, addMinutesToTimeStr,parseTimeToHoursMinutes } from "../utils/timeUtils.js";
+import { combineDateAndTime, addMinutesToTimeStr, parseTimeToHoursMinutes } from "../utils/timeUtils.js";
 
 dotenv.config();
 

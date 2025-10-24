@@ -12,6 +12,7 @@ import serviceRouter from "./routes/serviceRouter.js";
 import messageRouter from "./routes/messageRouter.js";
 import appointmentRouter from "./routes/appointmentRouter.js";
 import { stripeWebhookHandler } from './controllers/stripeController.js'; 
+import invoiceRouter from "./routes/invoiceRouter.js";
 
 // Models
 import Appointment from "./models/appointment.js";
@@ -74,6 +75,12 @@ app.use("/api/services", serviceRouter);
 
 // Stripe routes (excluding webhook, already defined above)
 app.use("/api/stripe", stripeRouter);
+
+// Add after your other routes
+app.use("/api/invoices", invoiceRouter);
+
+// Make sure /public folder exists with LUSTRE.jpg logo
+app.use(express.static("public"));
 
 // ----------------------------------------------------------------------
 //  CRON JOBS
